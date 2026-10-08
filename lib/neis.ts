@@ -43,7 +43,7 @@ export interface NeisMealItem {
  */
 export async function fetchNeisClasses(): Promise<NeisClassItem[]> {
   try {
-    const url = `${NEIS_CONFIG.API_BASE}/classInfo?ATPT_OFCDC_SC_CODE=${NEIS_CONFIG.ATPT_OFCDC_SC_CODE}&SD_SCHUL_CODE=${NEIS_CONFIG.SD_SCHUL_CODE}&Type=json&pSize=100`;
+    const url = `${NEIS_CONFIG.API_BASE}/classInfo?ATPT_OFCDC_SC_CODE=${NEIS_CONFIG.ATPT_OFCDC_SC_CODE}&SD_SCHUL_CODE=${NEIS_CONFIG.SD_SCHUL_CODE}&AY=2026&Type=json&pSize=100`;
     const res = await fetch(url, { next: { revalidate: 3600 } });
     if (!res.ok) throw new Error(`NEIS classInfo HTTP Error: ${res.status}`);
 
@@ -64,13 +64,11 @@ export async function fetchNeisClasses(): Promise<NeisClassItem[]> {
   } catch (err) {
     console.warn('[NEIS] classInfo fetch failed, using fallback:', err);
     return [
-      { grade: 1, classNm: '1', department: 'AI소프트웨어과' },
-      { grade: 1, classNm: '2', department: 'AI소프트웨어과' },
-      { grade: 1, classNm: '3', department: '전자통신과' },
-      { grade: 1, classNm: '4', department: '스마트전자과' },
-      { grade: 2, classNm: '1', department: 'AI소프트웨어과' },
-      { grade: 2, classNm: '2', department: '전자통신과' },
-      { grade: 3, classNm: '1', department: '스마트소프트웨어과' }
+      { grade: 1, classNm: '4', department: 'AI소프트웨어과' },
+      { grade: 1, classNm: '5', department: 'AI소프트웨어과' },
+      { grade: 1, classNm: '6', department: '스마트전자과' },
+      { grade: 1, classNm: '9', department: '전자통신과' },
+      { grade: 1, classNm: '10', department: '전자통신과' }
     ];
   }
 }

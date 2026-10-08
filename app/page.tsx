@@ -55,6 +55,7 @@ export default function HomePage() {
   // 시간표 뷰 상태
   const [scheduleView, setScheduleView] = useState<'daily' | 'weekly'>('daily');
   const [selectedClass, setSelectedClass] = useState<string>('1-4'); // NEIS 대진전통고 1-4반 기본
+  const [selectedDate, setSelectedDate] = useState<string>('2026-10-14'); // 기본 고등학교 시간표 일자
 
   // NEIS API 실시간 상태
   const [neisClasses, setNeisClasses] = useState<NeisClassItem[]>([]);
@@ -128,10 +129,10 @@ export default function HomePage() {
     }
   };
 
-  const loadNeisTimetable = async (grade: number | string, classNm: number | string) => {
+  const loadNeisTimetable = async (grade: number | string, classNm: number | string, dateStr: string = selectedDate) => {
     try {
-      // 20261014 (기본 고등학교 시간표 샘플 일자)
-      const res = await fetch(`/api/neis/timetable?grade=${grade}&classNm=${classNm}&ymd=20261014`);
+      const ymd = dateStr.replace(/-/g, '');
+      const res = await fetch(`/api/neis/timetable?grade=${grade}&classNm=${classNm}&ymd=${ymd}`);
       const json = await res.json();
       if (json.success && json.data) {
         setLiveTimetable(json.data);
@@ -163,13 +164,13 @@ export default function HomePage() {
     loadNeisMeals();
   }, []);
 
-  // 선택된 학급이 바뀌면 NEIS 시간표 호출
+  // 선택된 학급이나 날짜가 바뀌면 NEIS 시간표 호출
   useEffect(() => {
     const parts = selectedClass.split('-');
     const g = parts[0] || '1';
     const c = parts[1] || '4';
-    loadNeisTimetable(g, c);
-  }, [selectedClass]);
+    loadNeisTimetable(g, c, selectedDate);
+  }, [selectedClass, selectedDate]);
 
   // 테마 동기화
   useEffect(() => {
@@ -558,6 +559,17 @@ export default function HomePage() {
                   </select>
                 </div>
 
+                <div className="select-group">
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>날짜:</label>
+                  <input
+                    type="date"
+                    className="custom-select"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    title="NEIS 시간표 조회 일자 선택"
+                  />
+                </div>
+
                 <button
                   className="btn-pill"
                   onClick={handleManualSync}
@@ -758,6 +770,16 @@ export default function HomePage() {
                     </>
                   )}
                 </select>
+
+                <div className="select-group">
+                  <input
+                    type="date"
+                    className="custom-select"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    title="시간표 조회 일자"
+                  />
+                </div>
               </div>
 
               <button className="btn-pill" onClick={handleManualSync} disabled={isSyncing}>

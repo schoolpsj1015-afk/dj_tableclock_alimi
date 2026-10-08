@@ -60,6 +60,20 @@ export default function HomePage() {
   // NEIS API 실시간 상태
   const [neisClasses, setNeisClasses] = useState<NeisClassItem[]>([]);
   const [liveTimetable, setLiveTimetable] = useState<NeisPeriodItem[]>([]);
+  const [liveWeeklyTimetable, setLiveWeeklyTimetable] = useState<{
+    mon?: NeisPeriodItem[];
+    tue?: NeisPeriodItem[];
+    wed?: NeisPeriodItem[];
+    thu?: NeisPeriodItem[];
+    fri?: NeisPeriodItem[];
+  } | null>(null);
+  const [weeklyDates, setWeeklyDates] = useState<{
+    mon: string;
+    tue: string;
+    wed: string;
+    thu: string;
+    fri: string;
+  } | null>(null);
   const [liveMeals, setLiveMeals] = useState<NeisMealItem[]>([]);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
@@ -134,8 +148,10 @@ export default function HomePage() {
       const ymd = dateStr.replace(/-/g, '');
       const res = await fetch(`/api/neis/timetable?grade=${grade}&classNm=${classNm}&ymd=${ymd}`);
       const json = await res.json();
-      if (json.success && json.data) {
-        setLiveTimetable(json.data);
+      if (json.success) {
+        if (json.data) setLiveTimetable(json.data);
+        if (json.weekly) setLiveWeeklyTimetable(json.weekly);
+        if (json.dates) setWeeklyDates(json.dates);
       }
     } catch (e) {
       console.warn('Failed to load NEIS timetable', e);
@@ -253,21 +269,20 @@ export default function HomePage() {
 
   // 시간표 수동 동기화 (NEIS 실시간 API 강제 연동)
   const handleManualSync = async () => {
-    if (currentUser?.role !== 'teacher') {
-      showToast('시간표 수동 동기화는 교직원(teacher) 전용 권한입니다.', 'error');
-      return;
-    }
     try {
       setIsSyncing(true);
       showToast('NEIS(부산광역시교육청 C10 대진전자통신고 7150597) 실시간 동기화 중...', 'info');
       const parts = selectedClass.split('-');
-      await Promise.all([
+      const syncTasks: Promise<any>[] = [
         loadNeisClasses(),
         loadNeisMeals(),
-        loadNeisTimetable(parts[0], parts[1]),
-        supabaseService.manualSyncSchedule()
-      ]);
-      showToast('NEIS 공식 Open API(시간표·급식·학급) 최신 데이터가 성공적으로 갱신되었습니다!', 'success');
+        loadNeisTimetable(parts[0], parts[1], selectedDate)
+      ];
+      if (currentUser?.role === 'teacher') {
+        syncTasks.push(supabaseService.manualSyncSchedule());
+      }
+      await Promise.all(syncTasks);
+      showToast('NEIS 공식 Open API(전체 주간 매트릭스·일일 시간표·급식) 최신 데이터가 성공적으로 동기화되었습니다!', 'success');
     } catch (err: any) {
       showToast(err.message || '동기화 실패', 'error');
     } finally {
@@ -595,8 +610,8 @@ export default function HomePage() {
                         <span className="card-subtitle">{selectedClass} ({displayDepartment})</span>
                       </div>
                     </div>
-                    <button className="btn-pill" onClick={() => setCurrentTab('schedule')}>
-                      전체 주간보기
+                    <button className="btn-pill" onClick={() => { setCurrentTab('schedule'); setScheduleView('weekly'); }}>
+                      전체 주간 매트릭스
                     </button>
                   </div>
 
@@ -830,8 +845,20 @@ export default function HomePage() {
               <div className="card">
                 <div className="card-header">
                   <div>
-                    <h2 className="card-title">{selectedClass} 전체 주간 시간표 매트릭스</h2>
-                    <span className="card-subtitle">월요일 ~ 금요일 전체 교시 배정 현황</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                      <h2 className="card-title">{selectedClass} 전체 주간 시간표 매트릭스</h2>
+                      <span className="role-badge student" style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                        ⚡ NEIS 공식 실시간 연동
+                      </span>
+                    </div>
+                    <span className="card-subtitle">
+                      {displayDepartment} | {weeklyDates ? `${weeklyDates.mon} ~ ${weeklyDates.fri} 정규 교육과정` : '월요일 ~ 금요일 1~7교시 전체 편성표'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      총 {liveWeeklyTimetable ? (['mon','tue','wed','thu','fri'] as const).reduce((acc, d) => acc + (liveWeeklyTimetable[d]?.length || 0), 0) : 32}교시 배정
+                    </span>
                   </div>
                 </div>
                 <div className="weekly-table-wrap">
@@ -839,27 +866,66 @@ export default function HomePage() {
                     <thead>
                       <tr>
                         <th style={{ width: '80px' }}>교시</th>
-                        <th>월 (Mon)</th>
-                        <th>화 (Tue)</th>
-                        <th>수 (Wed)</th>
-                        <th>목 (Thu)</th>
-                        <th>금 (Fri)</th>
+                        {(['mon', 'tue', 'wed', 'thu', 'fri'] as const).map(day => {
+                          const dayNames = { mon: '월 (Mon)', tue: '화 (Tue)', wed: '수 (Wed)', thu: '목 (Thu)', fri: '금 (Fri)' };
+                          const dateStr = weeklyDates?.[day] ? weeklyDates[day].slice(5).replace('-', '.') : '';
+                          const isSelectedDay = selectedDate === weeklyDates?.[day];
+                          return (
+                            <th key={day} style={isSelectedDay ? { borderColor: 'var(--accent-indigo)', background: 'rgba(99, 102, 241, 0.08)' } : undefined}>
+                              <div>{dayNames[day]}</div>
+                              {dateStr && (
+                                <div style={{ fontSize: '0.72rem', fontWeight: 500, color: isSelectedDay ? 'var(--accent-indigo)' : 'var(--text-muted)' }}>
+                                  {dateStr} {isSelectedDay && '(선택일)'}
+                                </div>
+                              )}
+                            </th>
+                          );
+                        })}
                       </tr>
                     </thead>
                     <tbody>
                       {[1, 2, 3, 4, 5, 6, 7].map(period => (
                         <tr key={period}>
                           <td style={{ fontWeight: 800 }}>{period}교시</td>
-                          {['mon', 'tue', 'wed', 'thu', 'fri'].map(day => {
-                            const p = currentFallback.weekly[day]?.find(x => x.period === period);
+                          {(['mon', 'tue', 'wed', 'thu', 'fri'] as const).map(day => {
+                            const liveP = liveWeeklyTimetable?.[day]?.find(x => x.period === period);
+                            const fallbackP = currentFallback.weekly[day]?.find(x => x.period === period);
+                            const isSelectedDay = selectedDate === weeklyDates?.[day];
+
                             return (
-                              <td key={day}>
-                                {p ? (
+                              <td
+                                key={day}
+                                style={{
+                                  background: isSelectedDay
+                                    ? 'rgba(99, 102, 241, 0.05)'
+                                    : liveP
+                                    ? 'rgba(99, 102, 241, 0.02)'
+                                    : undefined,
+                                  transition: 'background 0.2s ease'
+                                }}
+                              >
+                                {liveP ? (
                                   <div>
-                                    <div style={{ fontWeight: 700 }}>{p.subject}</div>
-                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{p.teacher} ({p.room})</div>
+                                    <div style={{ fontWeight: 700, fontSize: '0.92rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                      <span>{liveP.subject}</span>
+                                      <span style={{ fontSize: '0.62rem', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 700 }}>
+                                        NEIS
+                                      </span>
+                                    </div>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                                      {liveP.department || displayDepartment}
+                                    </div>
                                   </div>
-                                ) : '-'}
+                                ) : fallbackP ? (
+                                  <div>
+                                    <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>{fallbackP.subject}</div>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                                      {fallbackP.teacher} ({fallbackP.room})
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>-</span>
+                                )}
                               </td>
                             );
                           })}

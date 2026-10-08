@@ -8,7 +8,8 @@ export const NEIS_CONFIG = {
   ATPT_OFCDC_SC_CODE: 'C10',
   SD_SCHUL_CODE: '7150597',
   SCHUL_NM: '대진전자통신고등학교',
-  API_BASE: 'https://open.neis.go.kr/hub'
+  API_BASE: 'https://open.neis.go.kr/hub',
+  KEY: process.env.NEIS_API_KEY || 'f76c6373802d472c992bcf6baa914441'
 };
 
 export interface NeisClassItem {
@@ -38,12 +39,72 @@ export interface NeisMealItem {
   originInfo?: string;
 }
 
+export interface NeisWeeklySchedule {
+  dates: {
+    mon: string;
+    tue: string;
+    wed: string;
+    thu: string;
+    fri: string;
+  };
+  days: {
+    mon: NeisPeriodItem[];
+    tue: NeisPeriodItem[];
+    wed: NeisPeriodItem[];
+    thu: NeisPeriodItem[];
+    fri: NeisPeriodItem[];
+  };
+}
+
+/**
+ * 기준 날짜로부터 해당 주의 월~금 날짜 계산 유틸
+ */
+export function getWeekDates(baseDateStr: string = '2026-10-14') {
+  let y = 2026, m = 10, d = 14;
+  const clean = (baseDateStr || '2026-10-14').replace(/-/g, '');
+  if (clean.length === 8) {
+    y = parseInt(clean.substring(0, 4), 10);
+    m = parseInt(clean.substring(4, 6), 10) - 1;
+    d = parseInt(clean.substring(6, 8), 10);
+  }
+  const dateObj = new Date(y, m, d);
+  const dayOfWeek = dateObj.getDay(); // 0(일) ~ 6(토)
+  
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const monday = new Date(dateObj);
+  monday.setDate(dateObj.getDate() + diffToMonday);
+
+  const dayKeys = ['mon', 'tue', 'wed', 'thu', 'fri'] as const;
+  const result: Record<typeof dayKeys[number], { ymd: string; formatted: string }> = {
+    mon: { ymd: '', formatted: '' },
+    tue: { ymd: '', formatted: '' },
+    wed: { ymd: '', formatted: '' },
+    thu: { ymd: '', formatted: '' },
+    fri: { ymd: '', formatted: '' }
+  };
+
+  dayKeys.forEach((key, index) => {
+    const cur = new Date(monday);
+    cur.setDate(monday.getDate() + index);
+    const yr = cur.getFullYear();
+    const mo = String(cur.getMonth() + 1).padStart(2, '0');
+    const da = String(cur.getDate()).padStart(2, '0');
+    result[key] = {
+      ymd: `${yr}${mo}${da}`,
+      formatted: `${yr}-${mo}-${da}`
+    };
+  });
+
+  return result;
+}
+
 /**
  * 1. 학급 정보 API (classInfo) 조회
  */
 export async function fetchNeisClasses(): Promise<NeisClassItem[]> {
   try {
-    const url = `${NEIS_CONFIG.API_BASE}/classInfo?ATPT_OFCDC_SC_CODE=${NEIS_CONFIG.ATPT_OFCDC_SC_CODE}&SD_SCHUL_CODE=${NEIS_CONFIG.SD_SCHUL_CODE}&AY=2026&Type=json&pSize=100`;
+    const keyParam = NEIS_CONFIG.KEY ? `&KEY=${NEIS_CONFIG.KEY}` : '';
+    const url = `${NEIS_CONFIG.API_BASE}/classInfo?ATPT_OFCDC_SC_CODE=${NEIS_CONFIG.ATPT_OFCDC_SC_CODE}&SD_SCHUL_CODE=${NEIS_CONFIG.SD_SCHUL_CODE}&AY=2026&Type=json&pSize=100${keyParam}`;
     const res = await fetch(url, { next: { revalidate: 3600 } });
     if (!res.ok) throw new Error(`NEIS classInfo HTTP Error: ${res.status}`);
 
@@ -74,7 +135,7 @@ export async function fetchNeisClasses(): Promise<NeisClassItem[]> {
 }
 
 /**
- * 2. 고등학교 시간표 API (hisTimetable) 조회
+ * 2. 고등학교 시간표 API (hisTimetable) 단일 일자 조회 (1~7교시)
  */
 export async function fetchNeisTimetable(
   grade: number | string,
@@ -82,7 +143,8 @@ export async function fetchNeisTimetable(
   ymd: string
 ): Promise<NeisPeriodItem[]> {
   try {
-    const url = `${NEIS_CONFIG.API_BASE}/hisTimetable?ATPT_OFCDC_SC_CODE=${NEIS_CONFIG.ATPT_OFCDC_SC_CODE}&SD_SCHUL_CODE=${NEIS_CONFIG.SD_SCHUL_CODE}&GRADE=${grade}&CLRM_NM=${classNm}&ALL_TI_YMD=${ymd}&Type=json`;
+    const keyParam = NEIS_CONFIG.KEY ? `&KEY=${NEIS_CONFIG.KEY}` : '';
+    const url = `${NEIS_CONFIG.API_BASE}/hisTimetable?ATPT_OFCDC_SC_CODE=${NEIS_CONFIG.ATPT_OFCDC_SC_CODE}&SD_SCHUL_CODE=${NEIS_CONFIG.SD_SCHUL_CODE}&GRADE=${grade}&CLRM_NM=${classNm}&ALL_TI_YMD=${ymd}&Type=json&pSize=20${keyParam}`;
     const res = await fetch(url, { next: { revalidate: 300 } });
     if (!res.ok) throw new Error(`NEIS hisTimetable HTTP Error: ${res.status}`);
 
@@ -102,6 +164,118 @@ export async function fetchNeisTimetable(
 }
 
 /**
+ * 2-1. 고등학교 주간 전체 시간표 매트릭스 조회 (월~금 1~7교시 전체 동기화)
+ */
+export async function fetchNeisWeeklyTimetable(
+  grade: number | string,
+  classNm: number | string,
+  baseDateStr: string = '2026-10-14'
+): Promise<NeisWeeklySchedule> {
+  const weekDates = getWeekDates(baseDateStr);
+  const monYmd = weekDates.mon.ymd;
+  const friYmd = weekDates.fri.ymd;
+
+  const datesFormatted = {
+    mon: weekDates.mon.formatted,
+    tue: weekDates.tue.formatted,
+    wed: weekDates.wed.formatted,
+    thu: weekDates.thu.formatted,
+    fri: weekDates.fri.formatted
+  };
+
+  const daysResult: {
+    mon: NeisPeriodItem[];
+    tue: NeisPeriodItem[];
+    wed: NeisPeriodItem[];
+    thu: NeisPeriodItem[];
+    fri: NeisPeriodItem[];
+  } = {
+    mon: [],
+    tue: [],
+    wed: [],
+    thu: [],
+    fri: []
+  };
+
+  try {
+    const keyParam = NEIS_CONFIG.KEY ? `&KEY=${NEIS_CONFIG.KEY}` : '';
+    // 주간 일괄 범위 조회
+    const bulkUrl = `${NEIS_CONFIG.API_BASE}/hisTimetable?ATPT_OFCDC_SC_CODE=${NEIS_CONFIG.ATPT_OFCDC_SC_CODE}&SD_SCHUL_CODE=${NEIS_CONFIG.SD_SCHUL_CODE}&GRADE=${grade}&CLRM_NM=${classNm}&TI_FROM_YMD=${monYmd}&TI_TO_YMD=${friYmd}&Type=json&pSize=100${keyParam}`;
+    const bulkRes = await fetch(bulkUrl, { next: { revalidate: 300 } });
+    
+    let rows: any[] = [];
+    if (bulkRes.ok) {
+      const data = await bulkRes.json();
+      rows = data?.hisTimetable?.[1]?.row || [];
+    }
+
+    // 일자별 수집 확인 및 부족한 경우 병렬 개별 호출로 완벽 보완
+    const foundDates = new Set(rows.map(r => r.ALL_TI_YMD));
+    const targetYmds = [weekDates.mon.ymd, weekDates.tue.ymd, weekDates.wed.ymd, weekDates.thu.ymd, weekDates.fri.ymd];
+    const missingYmds = targetYmds.filter(ymd => !foundDates.has(ymd));
+    
+    if (missingYmds.length > 0) {
+      const perDayResults = await Promise.all(
+        missingYmds.map(async (ymd) => {
+          try {
+            const dayUrl = `${NEIS_CONFIG.API_BASE}/hisTimetable?ATPT_OFCDC_SC_CODE=${NEIS_CONFIG.ATPT_OFCDC_SC_CODE}&SD_SCHUL_CODE=${NEIS_CONFIG.SD_SCHUL_CODE}&GRADE=${grade}&CLRM_NM=${classNm}&ALL_TI_YMD=${ymd}&Type=json&pSize=20${keyParam}`;
+            const res = await fetch(dayUrl, { next: { revalidate: 300 } });
+            if (!res.ok) return [];
+            const d = await res.json();
+            return d?.hisTimetable?.[1]?.row || [];
+          } catch {
+            return [];
+          }
+        })
+      );
+      rows = rows.concat(perDayResults.flat());
+    }
+
+    // 수집된 rows를 요일별로 분류
+    rows.forEach((r: any) => {
+      const ymd = r.ALL_TI_YMD;
+      let dayKey: 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | null = null;
+      if (ymd === weekDates.mon.ymd) dayKey = 'mon';
+      else if (ymd === weekDates.tue.ymd) dayKey = 'tue';
+      else if (ymd === weekDates.wed.ymd) dayKey = 'wed';
+      else if (ymd === weekDates.thu.ymd) dayKey = 'thu';
+      else if (ymd === weekDates.fri.ymd) dayKey = 'fri';
+
+      if (dayKey) {
+        daysResult[dayKey].push({
+          period: parseInt(r.PERIO, 10),
+          subject: (r.ITRT_CNTNT || '자율수업').replace(/^\*\s*/, '').trim(),
+          department: r.DDDEP_NM || '',
+          date: r.ALL_TI_YMD
+        });
+      }
+    });
+
+    // 각 요일별로 교시(period) 오름차순 정렬 및 중복 제거
+    (['mon', 'tue', 'wed', 'thu', 'fri'] as const).forEach(day => {
+      const map = new Map<number, NeisPeriodItem>();
+      daysResult[day].forEach(item => {
+        if (!map.has(item.period)) {
+          map.set(item.period, item);
+        }
+      });
+      daysResult[day] = Array.from(map.values()).sort((a, b) => a.period - b.period);
+    });
+
+    return {
+      dates: datesFormatted,
+      days: daysResult
+    };
+  } catch (err) {
+    console.warn('[NEIS] fetchNeisWeeklyTimetable failed:', err);
+    return {
+      dates: datesFormatted,
+      days: daysResult
+    };
+  }
+}
+
+/**
  * 3. 급식식단정보 API (mealServiceDietInfo) 조회 및 알레르기 번호 자동 파싱
  */
 export async function fetchNeisMeals(
@@ -109,7 +283,8 @@ export async function fetchNeisMeals(
   toYmd: string
 ): Promise<NeisMealItem[]> {
   try {
-    const url = `${NEIS_CONFIG.API_BASE}/mealServiceDietInfo?ATPT_OFCDC_SC_CODE=${NEIS_CONFIG.ATPT_OFCDC_SC_CODE}&SD_SCHUL_CODE=${NEIS_CONFIG.SD_SCHUL_CODE}&MLSV_FROM_YMD=${fromYmd}&MLSV_TO_YMD=${toYmd}&Type=json`;
+    const keyParam = NEIS_CONFIG.KEY ? `&KEY=${NEIS_CONFIG.KEY}` : '';
+    const url = `${NEIS_CONFIG.API_BASE}/mealServiceDietInfo?ATPT_OFCDC_SC_CODE=${NEIS_CONFIG.ATPT_OFCDC_SC_CODE}&SD_SCHUL_CODE=${NEIS_CONFIG.SD_SCHUL_CODE}&MLSV_FROM_YMD=${fromYmd}&MLSV_TO_YMD=${toYmd}&Type=json&pSize=50${keyParam}`;
     const res = await fetch(url, { next: { revalidate: 1800 } });
     if (!res.ok) throw new Error(`NEIS mealServiceDietInfo HTTP Error: ${res.status}`);
 

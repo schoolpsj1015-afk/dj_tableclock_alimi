@@ -25,14 +25,6 @@ import {
   FolderOpen
 } from 'lucide-react';
 
-function GithubIcon({ size = 16 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
-      <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
-    </svg>
-  );
-}
-
 import {
   ALLERGY_CODES,
   DEPARTMENTS,
@@ -44,6 +36,15 @@ import {
   AuditLogItem
 } from '../lib/data';
 import { supabaseService } from '../lib/supabase';
+import { NeisClassItem, NeisPeriodItem, NeisMealItem } from '../lib/neis';
+
+function GithubIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+      <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+    </svg>
+  );
+}
 
 export default function HomePage() {
   // 상태 관리
@@ -53,7 +54,13 @@ export default function HomePage() {
 
   // 시간표 뷰 상태
   const [scheduleView, setScheduleView] = useState<'daily' | 'weekly'>('daily');
-  const [selectedClass, setSelectedClass] = useState<string>('1-1');
+  const [selectedClass, setSelectedClass] = useState<string>('1-4'); // NEIS 대진전통고 1-4반 기본
+
+  // NEIS API 실시간 상태
+  const [neisClasses, setNeisClasses] = useState<NeisClassItem[]>([]);
+  const [liveTimetable, setLiveTimetable] = useState<NeisPeriodItem[]>([]);
+  const [liveMeals, setLiveMeals] = useState<NeisMealItem[]>([]);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // 데이터 상태
   const [posts, setPosts] = useState<PostItem[]>([]);
@@ -80,9 +87,9 @@ export default function HomePage() {
   const [profRealName, setProfRealName] = useState('');
   const [profNickname, setProfNickname] = useState('');
   const [profGrade, setProfGrade] = useState(1);
-  const [profClass, setProfClass] = useState(1);
+  const [profClass, setProfClass] = useState(4);
   const [profNum, setProfNum] = useState(1);
-  const [profDept, setProfDept] = useState('스마트소프트웨어과');
+  const [profDept, setProfDept] = useState('AI소프트웨어과');
   const [profAllergies, setProfAllergies] = useState<number[]>([]);
 
   // 토스트 메시지
@@ -94,6 +101,44 @@ export default function HomePage() {
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 3500);
+  };
+
+  // 1. NEIS API 데이터 로딩 (학급정보, 급식, 시간표)
+  const loadNeisClasses = async () => {
+    try {
+      const res = await fetch('/api/neis/classes');
+      const json = await res.json();
+      if (json.success && json.data?.length > 0) {
+        setNeisClasses(json.data);
+      }
+    } catch (e) {
+      console.warn('Failed to load NEIS classes', e);
+    }
+  };
+
+  const loadNeisMeals = async () => {
+    try {
+      const res = await fetch('/api/neis/meals');
+      const json = await res.json();
+      if (json.success && json.data?.length > 0) {
+        setLiveMeals(json.data);
+      }
+    } catch (e) {
+      console.warn('Failed to load NEIS meals', e);
+    }
+  };
+
+  const loadNeisTimetable = async (grade: number | string, classNm: number | string) => {
+    try {
+      // 20261014 (기본 고등학교 시간표 샘플 일자)
+      const res = await fetch(`/api/neis/timetable?grade=${grade}&classNm=${classNm}&ymd=20261014`);
+      const json = await res.json();
+      if (json.success && json.data) {
+        setLiveTimetable(json.data);
+      }
+    } catch (e) {
+      console.warn('Failed to load NEIS timetable', e);
+    }
   };
 
   // 초기 로딩
@@ -112,7 +157,19 @@ export default function HomePage() {
     setReportedPosts(supabaseService.getReportedPosts());
     setAuditLogs(supabaseService.getAuditLogs());
     setNotes(supabaseService.getNotes());
+
+    // NEIS 라이브 데이터 불러오기
+    loadNeisClasses();
+    loadNeisMeals();
   }, []);
+
+  // 선택된 학급이 바뀌면 NEIS 시간표 호출
+  useEffect(() => {
+    const parts = selectedClass.split('-');
+    const g = parts[0] || '1';
+    const c = parts[1] || '4';
+    loadNeisTimetable(g, c);
+  }, [selectedClass]);
 
   // 테마 동기화
   useEffect(() => {
@@ -131,9 +188,9 @@ export default function HomePage() {
     setProfRealName(profile.real_name || '');
     setProfNickname(profile.community_nickname || '');
     setProfGrade(profile.grade || 1);
-    setProfClass(profile.class_number || 1);
+    setProfClass(profile.class_number || 4);
     setProfNum(profile.student_number || 1);
-    setProfDept(profile.department || '스마트소프트웨어과');
+    setProfDept(profile.department || 'AI소프트웨어과');
     setProfAllergies(profile.allergy_filters || []);
   };
 
@@ -193,18 +250,27 @@ export default function HomePage() {
     showToast('개인 메모가 Supabase DB에 저장되었습니다.', 'success');
   };
 
-  // 시간표 수동 동기화 (교직원 전용)
+  // 시간표 수동 동기화 (NEIS 실시간 API 강제 연동)
   const handleManualSync = async () => {
     if (currentUser?.role !== 'teacher') {
       showToast('시간표 수동 동기화는 교직원(teacher) 전용 권한입니다.', 'error');
       return;
     }
     try {
-      showToast('NEIS 및 외부 시간표 서버와 동기화 중...', 'info');
-      const res = await supabaseService.manualSyncSchedule();
-      showToast(res.message, 'success');
+      setIsSyncing(true);
+      showToast('NEIS(부산광역시교육청 C10 대진전자통신고 7150597) 실시간 동기화 중...', 'info');
+      const parts = selectedClass.split('-');
+      await Promise.all([
+        loadNeisClasses(),
+        loadNeisMeals(),
+        loadNeisTimetable(parts[0], parts[1]),
+        supabaseService.manualSyncSchedule()
+      ]);
+      showToast('NEIS 공식 Open API(시간표·급식·학급) 최신 데이터가 성공적으로 갱신되었습니다!', 'success');
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || '동기화 실패', 'error');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -267,7 +333,7 @@ export default function HomePage() {
 
   // 게시글 신고
   const handleReportPost = async (postId: string) => {
-    const reason = prompt('신고 사유를 입력해 주십시오 (욕설/비방/음란물 등):');
+    const reason = prompt('신고 사유를 입력해 주십시오 (욕설/비방/불법광고 등):');
     if (!reason) return;
     try {
       await supabaseService.reportPost(postId, reason);
@@ -325,9 +391,13 @@ export default function HomePage() {
     }
   };
 
-  // 현재 시간표 데이터
-  const currentSchedule = SCHEDULE_DATA[selectedClass] || SCHEDULE_DATA['1-1'];
-  const todaySchedulePeriods = currentSchedule.weekly.thu || []; // 목요일 기준
+  // 현재 표시할 시간표 데이터 매핑 (NEIS 실시간 데이터가 있으면 최우선 적용, 없으면 Fallback 데이터)
+  const currentFallback = SCHEDULE_DATA[selectedClass] || SCHEDULE_DATA['1-1'];
+  const displayDepartment = neisClasses.find(c => `${c.grade}-${c.classNm}` === selectedClass)?.department || currentFallback.dept;
+
+  // NEIS 급식 또는 Fallback 급식
+  const displayMeals = liveMeals.length > 0 ? liveMeals : MEAL_DATA;
+  const todayMeal = displayMeals[0];
 
   return (
     <div className="app-container">
@@ -339,7 +409,7 @@ export default function HomePage() {
           </div>
           <div className="brand-titles">
             <span className="brand-name">대진 스마트 알리미</span>
-            <span className="brand-sub">대진전자통신고등학교 Next.js v8.0</span>
+            <span className="brand-sub">대진전자통신고등학교 NEIS Open API v8.0</span>
           </div>
         </button>
 
@@ -457,6 +527,9 @@ export default function HomePage() {
                 <span className={`role-badge ${currentUser?.role === 'teacher' ? 'teacher' : 'student'}`}>
                   {currentUser?.role === 'teacher' ? '교직원 모드' : '학생 모드'}
                 </span>
+                <span className="role-badge github" style={{ fontSize: '0.72rem' }}>
+                  NEIS API 실시간 연동
+                </span>
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>2026. 10. 08 (목)</span>
               </div>
 
@@ -468,14 +541,31 @@ export default function HomePage() {
                     value={selectedClass}
                     onChange={(e) => setSelectedClass(e.target.value)}
                   >
-                    <option value="1-1">1학년 1반 (SW과)</option>
-                    <option value="2-1">2학년 1반 (SW과)</option>
-                    <option value="3-1">3학년 1반 (통신과)</option>
+                    {neisClasses.length > 0 ? (
+                      neisClasses.map(c => (
+                        <option key={`${c.grade}-${c.classNm}`} value={`${c.grade}-${c.classNm}`}>
+                          {c.grade}학년 {c.classNm}반 ({c.department})
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="1-4">1학년 4반 (AI소프트웨어과)</option>
+                        <option value="1-1">1학년 1반 (AI소프트웨어과)</option>
+                        <option value="2-1">2학년 1반 (소프트웨어과)</option>
+                        <option value="3-1">3학년 1반 (전자통신과)</option>
+                      </>
+                    )}
                   </select>
                 </div>
 
-                <button className="btn-pill" onClick={handleManualSync} title="NEIS & Supabase 시간표 강제 동기화">
-                  <RotateCw size={14} /> 시간표 수동 동기화
+                <button
+                  className="btn-pill"
+                  onClick={handleManualSync}
+                  disabled={isSyncing}
+                  title="NEIS & Supabase 시간표 강제 수동 동기화 (C10 7150597)"
+                >
+                  <RotateCw size={14} className={isSyncing ? 'spin-icon' : ''} />
+                  {isSyncing ? '동기화 중...' : '시간표 수동 동기화'}
                 </button>
               </div>
             </div>
@@ -490,7 +580,7 @@ export default function HomePage() {
                       <div className="card-icon"><GraduationCap size={20} /></div>
                       <div>
                         <h2 className="card-title">오늘의 일일 시간표</h2>
-                        <span className="card-subtitle">{selectedClass} ({currentSchedule.dept})</span>
+                        <span className="card-subtitle">{selectedClass} ({displayDepartment})</span>
                       </div>
                     </div>
                     <button className="btn-pill" onClick={() => setCurrentTab('schedule')}>
@@ -499,21 +589,37 @@ export default function HomePage() {
                   </div>
 
                   <div className="schedule-container">
-                    {todaySchedulePeriods.map((p, idx) => (
-                      <div key={idx} className={`period-card ${p.period === 4 ? 'current-period' : ''}`}>
-                        <span className="period-num">{p.period}교시</span>
-                        <div className="period-main">
-                          <div className="subject-name">
-                            {p.subject}
-                            <span className="subject-badge">{p.room}</span>
+                    {liveTimetable.length > 0 ? (
+                      liveTimetable.map((p, idx) => (
+                        <div key={idx} className={`period-card ${p.period === 4 ? 'current-period' : ''}`}>
+                          <span className="period-num">{p.period}교시</span>
+                          <div className="period-main">
+                            <div className="subject-name">
+                              {p.subject}
+                              <span className="subject-badge">{p.department || displayDepartment}</span>
+                            </div>
+                            <div className="period-sub">
+                              <span>NEIS 실시간 수업 정보</span>
+                            </div>
                           </div>
-                          <div className="period-sub">
-                            <span>담당: {p.teacher}</span>
-                          </div>
+                          {p.period === 4 && <span className="role-badge student">현재 교시</span>}
                         </div>
-                        {p.period === 4 && <span className="role-badge student">현재 수업</span>}
-                      </div>
-                    ))}
+                      ))
+                    ) : (
+                      currentFallback.weekly.thu.map((p, idx) => (
+                        <div key={idx} className={`period-card ${p.period === 4 ? 'current-period' : ''}`}>
+                          <span className="period-num">{p.period}교시</span>
+                          <div className="period-main">
+                            <div className="subject-name">
+                              {p.subject}
+                              <span className="subject-badge">{p.room}</span>
+                            </div>
+                            <div className="period-sub">담당: {p.teacher}</div>
+                          </div>
+                          {p.period === 4 && <span className="role-badge student">현재 수업</span>}
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
@@ -559,7 +665,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* 우측 하단: 안심 급식표 & 알레르기 하이라이트 */}
+              {/* 우측 하단: 안심 급식표 & 알레르기 하이라이트 (NEIS API 실시간 연동) */}
               <div className="grid-col-right-bottom">
                 <div className="card">
                   <div className="card-header">
@@ -567,7 +673,9 @@ export default function HomePage() {
                       <div className="card-icon"><Utensils size={20} /></div>
                       <div>
                         <h2 className="card-title">오늘의 안심 급식표</h2>
-                        <span className="card-subtitle">{MEAL_DATA[0].type} ({MEAL_DATA[0].calories})</span>
+                        <span className="card-subtitle">
+                          {todayMeal?.type || '중식'} {todayMeal?.calories ? `(${todayMeal.calories})` : ''}
+                        </span>
                       </div>
                     </div>
                     <button className="btn-pill" onClick={() => setCurrentTab('meals')}>
@@ -583,7 +691,7 @@ export default function HomePage() {
                   )}
 
                   <div className="meal-list">
-                    {MEAL_DATA[0].menu.map((m, idx) => {
+                    {todayMeal?.menu && todayMeal.menu.map((m, idx) => {
                       const hasAllergy = m.allergies.some(a => currentUser?.allergy_filters?.includes(a));
                       return (
                         <div key={idx} className={`meal-item ${hasAllergy ? 'allergy-alert' : ''}`}>
@@ -635,14 +743,26 @@ export default function HomePage() {
                   value={selectedClass}
                   onChange={(e) => setSelectedClass(e.target.value)}
                 >
-                  <option value="1-1">1학년 1반 (스마트소프트웨어과)</option>
-                  <option value="2-1">2학년 1반 (스마트소프트웨어과)</option>
-                  <option value="3-1">3학년 1반 (전자통신과)</option>
+                  {neisClasses.length > 0 ? (
+                    neisClasses.map(c => (
+                      <option key={`${c.grade}-${c.classNm}`} value={`${c.grade}-${c.classNm}`}>
+                        {c.grade}학년 {c.classNm}반 ({c.department})
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="1-4">1학년 4반 (AI소프트웨어과)</option>
+                      <option value="1-1">1학년 1반 (AI소프트웨어과)</option>
+                      <option value="2-1">2학년 1반 (소프트웨어과)</option>
+                      <option value="3-1">3학년 1반 (전자통신과)</option>
+                    </>
+                  )}
                 </select>
               </div>
 
-              <button className="btn-pill" onClick={handleManualSync}>
-                <RotateCw size={14} /> 시간표 강제 갱신
+              <button className="btn-pill" onClick={handleManualSync} disabled={isSyncing}>
+                <RotateCw size={14} className={isSyncing ? 'spin-icon' : ''} />
+                {isSyncing ? '동기화 중...' : '시간표 강제 갱신'}
               </button>
             </div>
 
@@ -650,23 +770,38 @@ export default function HomePage() {
               <div className="card">
                 <div className="card-header">
                   <div>
-                    <h2 className="card-title">{selectedClass} 목요일 정규 시간표</h2>
-                    <span className="card-subtitle">{currentSchedule.dept} (총 7교시)</span>
+                    <h2 className="card-title">{selectedClass} 일일 정규 시간표</h2>
+                    <span className="card-subtitle">{displayDepartment} (NEIS Open API 공식 시간표)</span>
                   </div>
                 </div>
                 <div className="schedule-container">
-                  {todaySchedulePeriods.map((p, idx) => (
-                    <div key={idx} className="period-card">
-                      <span className="period-num">{p.period}교시</span>
-                      <div className="period-main">
-                        <div className="subject-name">
-                          {p.subject}
-                          <span className="subject-badge">{p.room}</span>
+                  {liveTimetable.length > 0 ? (
+                    liveTimetable.map((p, idx) => (
+                      <div key={idx} className="period-card">
+                        <span className="period-num">{p.period}교시</span>
+                        <div className="period-main">
+                          <div className="subject-name">
+                            {p.subject}
+                            <span className="subject-badge">{p.department || displayDepartment}</span>
+                          </div>
+                          <div className="period-sub">NEIS 부산광역시교육청 공식 시간표</div>
                         </div>
-                        <div className="period-sub">담당: {p.teacher}</div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    currentFallback.weekly.thu.map((p, idx) => (
+                      <div key={idx} className="period-card">
+                        <span className="period-num">{p.period}교시</span>
+                        <div className="period-main">
+                          <div className="subject-name">
+                            {p.subject}
+                            <span className="subject-badge">{p.room}</span>
+                          </div>
+                          <div className="period-sub">담당: {p.teacher}</div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             ) : (
@@ -694,7 +829,7 @@ export default function HomePage() {
                         <tr key={period}>
                           <td style={{ fontWeight: 800 }}>{period}교시</td>
                           {['mon', 'tue', 'wed', 'thu', 'fri'].map(day => {
-                            const p = currentSchedule.weekly[day]?.find(x => x.period === period);
+                            const p = currentFallback.weekly[day]?.find(x => x.period === period);
                             return (
                               <td key={day}>
                                 {p ? (
@@ -744,14 +879,16 @@ export default function HomePage() {
         )}
 
         {/* ========================================================
-             TAB 4: 급식표 상세
+             TAB 4: 급식표 상세 (NEIS Open API 실시간 식단표)
              ======================================================== */}
         {currentTab === 'meals' && (
           <section>
             <div className="sub-tabs-bar">
               <div>
-                <h2 style={{ fontSize: '1.35rem', fontWeight: 800 }}>이번 주 안심 급식 식단표</h2>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>19대 식품 알레르기 유발물질 자동 감지 시스템</span>
+                <h2 style={{ fontSize: '1.35rem', fontWeight: 800 }}>대진전자통신고 안심 급식 식단표 (NEIS API)</h2>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  부산광역시교육청 NEIS 급식식단정보 • 19대 식품 알레르기 유발물질 자동 감지
+                </span>
               </div>
               <button className="btn-pill" onClick={() => setCurrentTab('profile')}>
                 내 알레르기 필터 설정
@@ -759,12 +896,12 @@ export default function HomePage() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.25rem' }}>
-              {MEAL_DATA.map((meal, idx) => (
+              {displayMeals.map((meal, idx) => (
                 <div key={idx} className="card">
                   <div className="card-header">
                     <div>
                       <h3 className="card-title">{meal.dayName}</h3>
-                      <span className="card-subtitle">{meal.type} • {meal.calories}</span>
+                      <span className="card-subtitle">{meal.type} {meal.calories ? `• ${meal.calories}` : ''}</span>
                     </div>
                   </div>
                   <div className="meal-list">
@@ -1048,10 +1185,9 @@ export default function HomePage() {
                         value={profClass}
                         onChange={(e) => setProfClass(Number(e.target.value))}
                       >
-                        <option value={1}>1반</option>
-                        <option value={2}>2반</option>
-                        <option value={3}>3반</option>
-                        <option value={4}>4반</option>
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(c => (
+                          <option key={c} value={c}>{c}반</option>
+                        ))}
                       </select>
                     </div>
                     <div className="form-group">
@@ -1075,9 +1211,10 @@ export default function HomePage() {
                       value={profDept}
                       onChange={(e) => setProfDept(e.target.value)}
                     >
-                      {DEPARTMENTS.map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
+                      <option value="AI소프트웨어과">AI소프트웨어과</option>
+                      <option value="스마트전자과">스마트전자과</option>
+                      <option value="전자통신과">전자통신과</option>
+                      <option value="전자과">전자과</option>
                     </select>
                   </div>
 

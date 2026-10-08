@@ -25,28 +25,29 @@
 
 ## 3. 백엔드 및 인증/보안 아키텍처 (Supabase Multi-OAuth)
 
-### ① 멀티 OAuth 인증 및 역할(Role) 자동 분리
+### ① 멀티 OAuth 인증 및 역할(Role) 정책
 
 * **인증 제공자 (OAuth Providers via Supabase):**
-  * **Google OAuth:** 기존 학교 공식 도메인 기반 인증
-  * **GitHub OAuth [v8.0 신규]:** 특성화고(전자/통신/SW) 학생들의 개발자 생태계 및 포트폴리오 연계를 위한 소셜 로그인 지원
-* **도메인 및 계정별 역할(Role) 매핑 정책:**
-  1. **Google OAuth 로그인 시:**
+  * **Google OAuth:** 학교 공식 도메인 기반의 엄격한 역할/권한 제도 적용
+  * **GitHub OAuth [v8.0 신규 / 임시 전면 개방 정책]:** 모든 사용자 접속 허용 (단, 블랙리스트 차단 계정 제외)
+* **제공자별 인증 및 역할(Role) 정책:**
+  1. **Google OAuth 로그인 시 (엄격한 권한 제도 적용):**
      * `@pdj.hs.kr` ➔ 학생 (`student`) 권한 자동 부여
      * `@pdj.ht.kr` 또는 `@korea.kr` ➔ 교직원 (`teacher`) 권한 자동 부여
-  2. **GitHub OAuth 로그인 시 [v8.0 신규]:**
-     * GitHub 계정의 기본/보조 이메일 중 학교 공식 도메인(`@pdj.hs.kr`, `@pdj.ht.kr`, `@korea.kr`)이 포함된 경우, 해당 도메인 규칙에 따라 `student` 또는 `teacher` 권한 자동 매핑.
-     * 학교 도메인이 연동되지 않은 GitHub 일반 이메일 계정으로 최초 가입 시:
-       * 1단계: Supabase Auth에 계정 생성 및 `pending` 상태로 진입.
-       * 2단계: "학교 구글 계정 2차 연동" 또는 "학생증/학적 인증 코드 입력"을 거쳐 정식 `student`/`teacher` 권한으로 승격.
-       * 승격되지 않은 외부 사용자는 기본적으로 서비스 이용이 제한되며, 아래의 '외부/기타 계정 승인 절차' 대상이 됨.
-  3. **외부/기타 계정 (`etc`) 승인 시스템:**
-     * 학교 도메인이나 학적 검증이 없는 계정은 기본적으로 가입/서비스 이용 차단.
-     * 교직원(`teacher`) 관리자가 승인 패널에서 승인 처리 시에만 `etc` 권한 부여.
-* **승인 기록 보존 (Audit Log):**
-  * 교직원이 승인 시, 승인한 교사 이름/ID, 승인 일시, 대상 사용자의 이메일 및 GitHub 사용자명이 DB 감사 로그(`audit_logs`)에 영구 기록.
-* **비인증 도메인/미승인 사용자 차단 문구:**
-  * "죄송합니다. 학교 공식 이메일(@pdj.hs.kr / @pdj.ht.kr)로 로그인하시거나, 교직원 승인을 받은 계정으로 진행해 주십시오."
+     * **외부/기타 계정 (`etc`) 승인 시스템:**
+       * 학교 도메인이 아닌 일반 Google 계정은 기본적으로 가입/서비스 이용 차단.
+       * 교직원(`teacher`) 관리자가 승인 패널에서 승인 처리한 계정에 한해서만 `etc` 권한 부여 및 로그인 허용.
+       * 승인 시 승인 교사 ID, 승인 일시, 대상 이메일이 DB 감사 로그(`audit_logs`)에 영구 기록.
+     * **비인가 도메인 차단 문구:**
+       * "죄송합니다. 학교 공식 이메일(@pdj.hs.kr / @pdj.ht.kr)로 로그인하시거나, 교직원 승인을 받은 계정으로 진행해 주십시오."
+  2. **GitHub OAuth 로그인 시 (임시 오픈 & 블랙리스트 필터링 정책) [v8.0 신규]:**
+     * **임시 전면 허용 원칙:** 학교 도메인 여부, 이메일 주소, 학적 상태와 무관하게 **모든 사용자의 가입 및 로그인을 임시로 전면 허용**.
+     * **블랙리스트 필터링 적용:**
+       * `blacklisted_users` 테이블에 등록된 계정(차단된 GitHub username, 이메일, GitHub UID)이 아닌 이상 누구나 즉시 서비스 이용 가능.
+       * 블랙리스트에 등재되지 않은 정상 GitHub 사용자는 기본적으로 서비스 전체 이용 권한(`student` 기준)을 부여받아 자유롭게 개인정보 저장, 시간표, 급식, 자유게시판 이용 가능.
+       * 관리자/교직원(`teacher`) 권한 승격이 필요한 경우에 한해서만 별도 관리자 지정 절차 진행.
+     * **블랙리스트 차단 계정 접근 시 문구:**
+       * "운영 정책 위반 등으로 인해 이용이 제한된 계정입니다. 관리자(교직원)에게 문의해 주십시오."
 
 ### ② 시간표 Fallback 데이터 구조 및 주기적 갱신 (CORS 문제 원천 해결)
 
@@ -94,19 +95,57 @@ Supabase의 `auth.users`와 1:1로 매핑되는 `public.user_profiles` 테이블
 | `created_at` | `TIMESTAMPTZ` | DEFAULT NOW() | 계정 생성 일시 |
 | `updated_at` | `TIMESTAMPTZ` | DEFAULT NOW() | 프로필 최근 수정 일시 |
 
-### ② Supabase Database Trigger를 통한 프로필 자동 초기화
+### ② Supabase Database Trigger를 통한 프로필 자동 초기화 및 블랙리스트 검증
 
-* 사용자가 GitHub 또는 Google OAuth로 최초 로그인하여 `auth.users`에 레코드가 생성될 때, PostgreSQL 함수 및 트리거(`on_auth_user_created`)가 자동 실행됨.
-* **자동 동기화 로직:**
-  * GitHub 메타데이터(`raw_user_meta_data`)에서 `user_name`, `avatar_url`, `preferred_username` 등을 추출하여 `github_username`, `github_avatar_url`에 자동 기입.
-  * 커뮤니티 닉네임(`community_nickname`)은 GitHub 닉네임 또는 이메일 접두어를 기반으로 임시 고유값 부여 (이후 마이페이지에서 수정 가능).
-  * 역할(`role`)은 로그인 이메일 도메인 및 메타데이터에 따라 자동 산정(`student`, `teacher`, `etc`).
+* 사용자가 GitHub 또는 Google OAuth로 로그인하여 `auth.users`에 레코드가 생성될 때, PostgreSQL 함수 및 트리거(`on_auth_user_created`)가 자동 실행됨.
+* **분기 처리 로직:**
+  1. **GitHub 로그인:**
+     * `blacklisted_users` 테이블에 해당 GitHub username 또는 이메일이 존재하는지 확인.
+     * 블랙리스트에 있을 경우 예외 발생(`RAISE EXCEPTION`)하여 회원가입/로그인 차단.
+     * 블랙리스트가 아닌 경우, 즉시 기본 역할(`student`)로 프로필 자동 생성 및 서비스 허용.
+  2. **Google 로그인:**
+     * 도메인 검증 수행: `@pdj.ht.kr` 또는 `@korea.kr` ➔ `teacher`, `@pdj.hs.kr` ➔ `student`.
+     * 기타 일반 구글 계정 ➔ 승인 대기(`etc`).
 
 ```sql
--- 사용자 가입 시 user_profiles 자동 생성 트리거 함수 예시
+-- 사용자 가입 시 블랙리스트 검증 및 user_profiles 자동 생성 트리거 함수
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
+DECLARE
+  v_provider TEXT;
+  v_github_user TEXT;
+  v_role VARCHAR(20);
 BEGIN
+  v_provider := COALESCE(new.raw_app_meta_data->>'provider', 'unknown');
+  v_github_user := new.raw_user_meta_data->>'user_name';
+
+  -- 1. GitHub 로그인인 경우: 블랙리스트 확인 후 모든 사용자 임시 허용
+  IF v_provider = 'github' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.blacklisted_users 
+      WHERE github_username = v_github_user OR email = new.email
+    ) THEN
+      RAISE EXCEPTION '차단된 계정입니다. 관리자에게 문의하세요.';
+    END IF;
+    
+    -- 블랙리스트가 아니면 기본 사용자(student 권한)로 즉시 등록
+    v_role := 'student';
+
+  -- 2. Google 로그인인 경우: 엄격한 학교 도메인 기반 역할 매핑
+  ELSIF v_provider = 'google' THEN
+    IF new.email LIKE '%@pdj.ht.kr' OR new.email LIKE '%@korea.kr' THEN
+      v_role := 'teacher';
+    ELSIF new.email LIKE '%@pdj.hs.kr' THEN
+      v_role := 'student';
+    ELSE
+      v_role := 'etc'; -- 교직원 수동 승인 필요
+    END IF;
+
+  ELSE
+    v_role := 'etc';
+  END IF;
+
+  -- 프로필 레코드 자동 생성
   INSERT INTO public.user_profiles (
     id,
     email,
@@ -121,18 +160,15 @@ BEGIN
   VALUES (
     new.id,
     new.email,
-    COALESCE(new.raw_app_meta_data->>'provider', 'unknown'),
-    new.raw_user_meta_data->>'user_name',
+    v_provider,
+    v_github_user,
     new.raw_user_meta_data->>'avatar_url',
     COALESCE(new.raw_user_meta_data->>'preferred_username', split_part(new.email, '@', 1)),
-    CASE 
-      WHEN new.email LIKE '%@pdj.ht.kr' OR new.email LIKE '%@korea.kr' THEN 'teacher'
-      WHEN new.email LIKE '%@pdj.hs.kr' THEN 'student'
-      ELSE 'etc'
-    END,
+    v_role,
     TRUE,
     NOW()
   );
+
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

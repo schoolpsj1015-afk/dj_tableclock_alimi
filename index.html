@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>대진전자통신고등학교 통합 스마트 알리미 v8.0</title>
+  <meta name="description" content="대진전자통신고등학교 학생 및 교직원을 위한 통합 학사, 실시간 시간표, 안심 급식 알레르기 필터링, Supabase GitHub 멀티 OAuth 기반 스마트 알리미 서비스입니다.">
+  <meta name="keywords" content="대진전자통신고, 대진전통고, 시간표, 급식표, 학사일정, Supabase, GitHub OAuth, 스마트 알리미">
+  <meta name="theme-color" content="#0a071b">
+
+  <!-- Favicon / Icon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+
+  <!-- Font Awesome 6 Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+  <!-- Core Design Stylesheet -->
+  <link rel="stylesheet" href="index.css">
+</head>
+<body data-theme="dark">
+  <div class="app-container">
+
+    <!-- 🌟 Top Header Navbar -->
+    <header class="app-header" id="app-header">
+      <div class="brand-section" id="brand-logo" onclick="app.switchTab('main')">
+        <div class="brand-logo-badge">
+          <i class="fa-solid fa-bolt-lightning"></i>
+        </div>
+        <div class="brand-titles">
+          <span class="brand-name">대진 스마트 알리미</span>
+          <span class="brand-sub">대진전자통신고등학교 v8.0</span>
+        </div>
+      </div>
+
+      <!-- Desktop Navigation -->
+      <nav class="desktop-nav" id="desktop-nav" aria-label="메인 네비게이션">
+        <button class="nav-item active" id="nav-btn-main" onclick="app.switchTab('main')">
+          <i class="fa-solid fa-house"></i> 메인
+        </button>
+        <button class="nav-item" id="nav-btn-schedule" onclick="app.switchTab('schedule')">
+          <i class="fa-solid fa-clock"></i> 시간표
+        </button>
+        <button class="nav-item" id="nav-btn-academic" onclick="app.switchTab('academic')">
+          <i class="fa-solid fa-calendar-days"></i> 학사일정
+        </button>
+        <button class="nav-item" id="nav-btn-meals" onclick="app.switchTab('meals')">
+          <i class="fa-solid fa-utensils"></i> 급식표
+        </button>
+        <button class="nav-item" id="nav-btn-board" onclick="app.switchTab('board')">
+          <i class="fa-solid fa-comments"></i> 자유게시판
+        </button>
+        <!-- Teacher Exclusive Tab (PRD Section 4-②) -->
+        <button class="nav-item" id="nav-btn-alerts" onclick="app.switchTab('alerts')" style="display: none;">
+          <i class="fa-solid fa-shield-halved"></i> 교직원 알림
+          <span class="badge-count" id="header-alert-count">1</span>
+        </button>
+        <button class="nav-item" id="nav-btn-profile" onclick="app.switchTab('profile')">
+          <i class="fa-solid fa-user-gear"></i> 내 정보
+        </button>
+      </nav>
+
+      <!-- Header Action Controls -->
+      <div class="header-actions">
+        <!-- Theme Toggle Button -->
+        <button class="btn-icon" id="theme-toggle-btn" title="다크/화이트 테마 전환" onclick="app.toggleTheme()">
+          <i class="fa-solid fa-moon" id="theme-icon"></i>
+        </button>
+
+        <!-- Quick Demo Switcher -->
+        <div class="select-group" style="margin-right: 0.25rem;">
+          <select class="custom-select" id="quick-role-select" onchange="app.handleQuickRoleChange(this.value)" title="빠른 데모 역할 전환">
+            <option value="guest">👤 게스트 모드</option>
+            <option value="student">🎓 학생 모드 (GitHub)</option>
+            <option value="teacher">👨‍🏫 교직원 모드 (Google)</option>
+          </select>
+        </div>
+
+        <!-- User Capsule / Auth Button -->
+        <div class="user-capsule" id="user-capsule" onclick="app.handleAuthClick()">
+          <img src="https://api.dicebear.com/7.x/identicon/svg?seed=guest" alt="프로필 아바타" class="capsule-avatar" id="capsule-avatar">
+          <div class="capsule-info">
+            <span class="capsule-name" id="capsule-name">로그인</span>
+            <span class="capsule-role" id="capsule-role">GitHub / Google</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 📱 Bottom Navigation for Mobile -->
+    <nav class="bottom-nav" id="bottom-nav" aria-label="모바일 하단 네비게이션">
+      <a href="javascript:void(0)" class="bottom-nav-item active" id="bnav-main" onclick="app.switchTab('main')">
+        <i class="fa-solid fa-house"></i>
+        <span>메인</span>
+      </a>
+      <a href="javascript:void(0)" class="bottom-nav-item" id="bnav-schedule" onclick="app.switchTab('schedule')">
+        <i class="fa-solid fa-clock"></i>
+        <span>시간표</span>
+      </a>
+      <a href="javascript:void(0)" class="bottom-nav-item" id="bnav-meals" onclick="app.switchTab('meals')">
+        <i class="fa-solid fa-utensils"></i>
+        <span>급식</span>
+      </a>
+      <a href="javascript:void(0)" class="bottom-nav-item" id="bnav-board" onclick="app.switchTab('board')">
+        <i class="fa-solid fa-comments"></i>
+        <span>게시판</span>
+      </a>
+      <a href="javascript:void(0)" class="bottom-nav-item" id="bnav-alerts" onclick="app.switchTab('alerts')" style="display: none;">
+        <i class="fa-solid fa-shield-halved"></i>
+        <span>알림</span>
+      </a>
+      <a href="javascript:void(0)" class="bottom-nav-item" id="bnav-profile" onclick="app.switchTab('profile')">
+        <i class="fa-solid fa-user"></i>
+        <span>내정보</span>
+      </a>
+    </nav>
+
+    <!-- 🌟 Main Content Container -->
+    <main class="main-content" id="main-content">
+
+      <!-- ========================================================
+           TAB 1: 메인 대시보드 (PRD Section 7 반응형 동적 배치 그리드)
+           💻 Wide View: 좌측(시간표) / 우측상단(메모장&프로필) / 우측하단(급식표)
+           📱 Portrait View: 상단(시간표) / 하단좌측(메모장) / 하단우측(급식표)
+           ======================================================== -->
+      <section id="section-main" class="tab-pane active">
+        <!-- Sub Bar: 현재 날짜 및 수동 시간표 동기화 버튼 -->
+        <div class="sub-tabs-bar">
+          <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+            <h1 style="font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em;">대진 스마트 대시보드</h1>
+            <span class="role-badge student" id="dashboard-role-badge">학생 모드</span>
+            <span style="font-size: 0.85rem; color: var(--text-muted);" id="current-live-time">2026. 10. 08 (목)</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <!-- Grade/Class Quick Selector -->
+            <div class="select-group">
+              <label for="dash-grade-select" class="form-label" style="margin:0; font-size: 0.8rem;">반 선택:</label>
+              <select class="custom-select" id="dash-grade-select" onchange="app.handleScheduleChange()">
+                <option value="1-1">1학년 1반 (소프트웨어)</option>
+                <option value="2-1">2학년 1반 (소프트웨어)</option>
+                <option value="3-1">3학년 1반 (전자통신)</option>
+              </select>
+            </div>
+
+            <!-- Teacher Manual Sync Button (PRD 3-②) -->
+            <button class="btn-pill" id="btn-manual-sync" onclick="app.handleManualSync()" title="NEIS & eznel.com 최신 시간표 강제 수동 동기화">
+              <i class="fa-solid fa-arrows-rotate"></i> 시간표 수동 동기화
+            </button>
+          </div>
+        </div>
+
+        <!-- 📐 Dynamic Responsive Layout Container -->
+        <div class="dynamic-dashboard-grid">
+          
+          <!-- [Left Area / Top Area]: 시간표 카드 (일일 시간표 중심) -->
+          <div class="grid-col-left">
+            <div class="card" id="card-dashboard-schedule">
+              <div class="card-header">
+                <div class="card-title-group">
+                  <div class="card-icon"><i class="fa-solid fa-graduation-cap"></i></div>
+                  <div>
+                    <h2 class="card-title" id="dash-schedule-title">오늘의 일일 시간표</h2>
+                    <span class="card-subtitle" id="dash-schedule-subtitle">1학년 1반 스마트소프트웨어과</span>
+                  </div>
+                </div>
+                <div class="pill-group">
+                  <button class="pill-btn active" id="pill-day-today" onclick="app.setScheduleDay('today')">오늘</button>
+                  <button class="pill-btn" id="pill-day-weekly" onclick="app.switchTab('schedule')">전체 주간보기 <i class="fa-solid fa-arrow-right"></i></button>
+                </div>
+              </div>
+
+              <!-- 일일 시간표 리스트 -->
+              <div class="schedule-container" id="dash-period-list">
+                <!-- Javascript Dynamic Injection -->
+              </div>
+            </div>
+
+            <!-- 학사일정 D-Day 하이라이트 배너 -->
+            <div class="card" style="background: var(--bg-tertiary); padding: 1.15rem 1.5rem;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                  <span style="font-size: 1.5rem;">🎯</span>
+                  <div>
+                    <div style="font-weight: 700; font-size: 0.95rem;">2학기 1차 지필평가 (중간고사)</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">2026. 10. 15 ~ 10. 19 전 학년 실시</div>
+                  </div>
+                </div>
+                <span class="role-badge student" style="font-size: 0.9rem; padding: 0.35rem 0.85rem; font-weight: 800;">D-7</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- [Right Top Area]: 개인 메모장 & 미니 GitHub 프로필 (Supabase 개인 공간) -->
+          <div class="grid-col-right-top">
+            <div class="card notes-card">
+              <div class="card-header">
+                <div class="card-title-group">
+                  <div class="card-icon"><i class="fa-solid fa-note-sticky"></i></div>
+                  <div>
+                    <h2 class="card-title">내 개인 메모장</h2>
+                    <span class="card-subtitle">Supabase 개인 데이터베이스 연동</span>
+                  </div>
+                </div>
+                <span class="role-badge github" id="notes-sync-status">자동 동기화 중</span>
+              </div>
+              <textarea id="personal-notes-input" placeholder="나만의 시간표 메모, 학습 체크리스트, 준비물을 기록하세요..." oninput="app.handleNotesInput()"></textarea>
+              <div class="notes-status-row">
+                <span id="notes-char-count">0자 작성됨</span>
+                <button class="btn-pill" onclick="app.saveNotesNow()"><i class="fa-solid fa-cloud-arrow-up"></i> 즉시 저장</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- [Right Bottom Area]: 급식표 (개인 알레르기 성분 필터링 연동) -->
+          <div class="grid-col-right-bottom">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title-group">
+                  <div class="card-icon"><i class="fa-solid fa-bowl-food"></i></div>
+                  <div>
+                    <h2 class="card-title">오늘의 안심 급식표</h2>
+                    <span class="card-subtitle" id="meal-subtitle">중식 (824.5 Kcal)</span>
+                  </div>
+                </div>
+                <button class="btn-pill" onclick="app.switchTab('meals')" title="주간 급식표 보기">주간보기</button>
+              </div>
+
+              <!-- 알레르기 안내 바 -->
+              <div id="meal-allergy-bar" style="margin-bottom: 0.85rem; font-size: 0.78rem; color: var(--accent-pink); display: flex; align-items: center; gap: 0.4rem;">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span id="meal-allergy-summary-text">회원님의 맞춤 알레르기 필터가 적용 중입니다.</span>
+              </div>
+
+              <!-- 급식 메뉴 리스트 -->
+              <div class="meal-list" id="dash-meal-list">
+                <!-- Javascript Dynamic Injection -->
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================================
+           TAB 2: 시간표 상세 탭 (일일 시간표 / 전체 주간 시간표)
+           ======================================================== -->
+      <section id="section-schedule" class="tab-pane" style="display: none;">
+        <div class="sub-tabs-bar">
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div class="pill-group">
+              <button class="pill-btn active" id="subtab-daily-schedule" onclick="app.switchScheduleView('daily')">
+                <i class="fa-solid fa-calendar-day"></i> 일일 시간표
+              </button>
+              <button class="pill-btn" id="subtab-weekly-schedule" onclick="app.switchScheduleView('weekly')">
+                <i class="fa-solid fa-calendar-week"></i> 전체 주간 시간표
+              </button>
+            </div>
+
+            <!-- Grade/Class Select -->
+            <select class="custom-select" id="full-schedule-class-select" onchange="app.handleFullScheduleChange()">
+              <option value="1-1">1학년 1반 (스마트소프트웨어과)</option>
+              <option value="2-1">2학년 1반 (스마트소프트웨어과)</option>
+              <option value="3-1">3학년 1반 (전자통신과)</option>
+            </select>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn-pill" onclick="app.handleManualSync()">
+              <i class="fa-solid fa-rotate"></i> 시간표 동기화 갱신
+            </button>
+          </div>
+        </div>
+
+        <!-- 일일 뷰 컨테이너 -->
+        <div id="schedule-daily-view" class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" id="full-daily-title">1학년 1반 일일 시간표</h2>
+              <span class="card-subtitle">총 7교시 정규 수업 일정</span>
+            </div>
+          </div>
+          <div class="schedule-container" id="full-daily-period-list">
+            <!-- Dynamic Content -->
+          </div>
+        </div>
+
+        <!-- 전체 주간 시간표 테이블 뷰 -->
+        <div id="schedule-weekly-view" class="card" style="display: none;">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" id="full-weekly-title">1학년 1반 전체 주간 시간표</h2>
+              <span class="card-subtitle">월요일 ~ 금요일 전체 교시 매트릭스</span>
+            </div>
+          </div>
+          <div class="weekly-table-wrap">
+            <table class="weekly-table" id="weekly-schedule-table">
+              <thead>
+                <tr>
+                  <th style="width: 70px;">교시</th>
+                  <th>월 (Mon)</th>
+                  <th>화 (Tue)</th>
+                  <th>수 (Wed)</th>
+                  <th>목 (Thu)</th>
+                  <th>금 (Fri)</th>
+                </tr>
+              </thead>
+              <tbody id="weekly-table-body">
+                <!-- Javascript Injection -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           TAB 3: 학사일정 탭
+           ======================================================== -->
+      <section id="section-academic" class="tab-pane" style="display: none;">
+        <div class="sub-tabs-bar">
+          <h2 style="font-size: 1.35rem; font-weight: 800;">2026학년도 학사일정 및 D-Day</h2>
+          <span style="font-size: 0.85rem; color: var(--text-muted);">NEIS 학사일정 자동 연동</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.25rem;" id="academic-event-cards">
+          <!-- Javascript Dynamic Injection -->
+        </div>
+      </section>
+
+      <!-- ========================================================
+           TAB 4: 안심 급식표 탭
+           ======================================================== -->
+      <section id="section-meals" class="tab-pane" style="display: none;">
+        <div class="sub-tabs-bar">
+          <div>
+            <h2 style="font-size: 1.35rem; font-weight: 800;">이번 주 안심 급식 식단표</h2>
+            <span style="font-size: 0.85rem; color: var(--text-muted);">식품의약품안전처 19대 알레르기 유발물질 자동 하이라이트</span>
+          </div>
+          <button class="btn-pill" onclick="app.switchTab('profile')">
+            <i class="fa-solid fa-sliders"></i> 내 알레르기 필터 설정
+          </button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.25rem;" id="weekly-meals-cards">
+          <!-- Javascript Dynamic Injection -->
+        </div>
+      </section>
+
+      <!-- ========================================================
+           TAB 5: 자유게시판 탭 (PRD Section 4: 닉네임, 30분 수정 제한, 신고)
+           ======================================================== -->
+      <section id="section-board" class="tab-pane" style="display: none;">
+        <div class="board-header-bar">
+          <div>
+            <h2 style="font-size: 1.35rem; font-weight: 800;">대진 학생·교직원 자유게시판</h2>
+            <span style="font-size: 0.85rem; color: var(--text-muted);">커뮤니티 닉네임 사용 | 작성 후 30분 수정 제한 | 안전한 모니터링 시스템</span>
+          </div>
+          <button class="btn-primary" onclick="app.openWritePostModal()">
+            <i class="fa-solid fa-pen-to-square"></i> 글쓰기
+          </button>
+        </div>
+
+        <!-- 게시글 목록 피드 -->
+        <div id="board-posts-feed">
+          <!-- Javascript Dynamic Injection -->
+        </div>
+      </section>
+
+      <!-- ========================================================
+           TAB 6: [교직원 전용] 신고 게시물 알림 및 버전 수정 폴더 캐비닛 뷰 (PRD Section 4-②)
+           ======================================================== -->
+      <section id="section-alerts" class="tab-pane" style="display: none;">
+        <div class="sub-tabs-bar">
+          <div>
+            <h2 style="font-size: 1.35rem; font-weight: 800; color: var(--accent-pink);">
+              <i class="fa-solid fa-shield-halved"></i> 교직원 전용: 신고 게시물 및 수정본 관리
+            </h2>
+            <span style="font-size: 0.85rem; color: var(--text-muted);">
+              계층화된 파일 캐비닛 뷰: [1. 작성자] | [2. 최초 원본] | [3. 하위 수정 이력 폴더 (스냅샷)] | 10초 쿨타임 무결성 보장
+            </span>
+          </div>
+          <button class="btn-pill" onclick="app.openAuditLogsModal()">
+            <i class="fa-solid fa-book-bookmark"></i> etc 계정 승인 감사 로그
+          </button>
+        </div>
+
+        <!-- 파일 캐비닛 트리 뷰 컨테이너 -->
+        <div class="file-cabinet-wrap" id="file-cabinet-container">
+          <!-- Javascript Dynamic Injection -->
+        </div>
+      </section>
+
+      <!-- ========================================================
+           TAB 7: 내 정보 (마이페이지) 탭 (PRD Section 4 & Section 7)
+           GitHub 연동 정보, 학적 정보, 알레르기 19종 체크박스, 회원 탈퇴
+           ======================================================== -->
+      <section id="section-profile" class="tab-pane" style="display: none;">
+        <div class="profile-grid">
+
+          <!-- 좌측: 프로필 요약 카드 -->
+          <div class="card profile-card-left">
+            <img src="https://api.dicebear.com/7.x/identicon/svg?seed=guest" alt="프로필 사진" class="profile-large-avatar" id="prof-large-avatar">
+            <h2 class="profile-name" id="prof-display-name">게스트 사용자</h2>
+            <div style="display: flex; gap: 0.4rem; justify-content: center; margin-bottom: 0.5rem;">
+              <span class="role-badge student" id="prof-role-badge">학생</span>
+              <span class="role-badge github" id="prof-provider-badge">GitHub 미연동</span>
+            </div>
+            <p class="profile-bio" id="prof-bio">대진전자통신고 알리미를 둘러보는 중입니다.</p>
+
+            <a href="https://github.com" target="_blank" class="github-link-btn" id="prof-github-link-btn">
+              <i class="fa-brands fa-github"></i> GitHub 프로필 방문
+            </a>
+
+            <div style="width: 100%; border-top: 1px solid var(--border-subtle); margin: 1.5rem 0; padding-top: 1.25rem;">
+              <button class="btn-pill danger" style="width: 100%; justify-content: center;" onclick="app.handleDeleteAccount()">
+                <i class="fa-solid fa-user-xmark"></i> 회원 탈퇴 및 개인정보 파기
+              </button>
+            </div>
+          </div>
+
+          <!-- 우측: 학적 정보 및 알레르기 / 개인설정 폼 -->
+          <div class="card">
+            <h2 style="font-size: 1.25rem; font-weight: 800; margin-bottom: 1.25rem;">
+              <i class="fa-solid fa-id-card-clip"></i> 학적 정보 및 맞춤 개인화 설정
+            </h2>
+
+            <form id="profile-edit-form" onsubmit="app.handleProfileSave(event)">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                  <label class="form-label" for="input-real-name">실명 (이름)</label>
+                  <input type="text" class="form-input" id="input-real-name" placeholder="홍길동" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="input-nickname">자유게시판 활동 닉네임</label>
+                  <input type="text" class="form-input" id="input-nickname" placeholder="커뮤니티 닉네임" required>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                  <label class="form-label" for="input-grade">학년</label>
+                  <select class="custom-select" id="input-grade" style="width: 100%;">
+                    <option value="1">1학년</option>
+                    <option value="2">2학년</option>
+                    <option value="3">3학년</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="input-class">반</label>
+                  <select class="custom-select" id="input-class" style="width: 100%;">
+                    <option value="1">1반</option>
+                    <option value="2">2반</option>
+                    <option value="3">3반</option>
+                    <option value="4">4반</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="input-num">번호</label>
+                  <input type="number" class="form-input" id="input-num" min="1" max="40" placeholder="15">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="input-department">학과 (전공)</label>
+                <select class="custom-select" id="input-department" style="width: 100%;">
+                  <option value="스마트소프트웨어과">스마트소프트웨어과</option>
+                  <option value="전자통신과">전자통신과</option>
+                  <option value="스마트전자과">스마트전자과</option>
+                  <option value="인공지능통신과">인공지능통신과</option>
+                </select>
+              </div>
+
+              <!-- 알레르기 유발 식품 선택기 19종 (PRD Section 4-①, ④) -->
+              <div class="form-group" style="margin-top: 1.5rem;">
+                <label class="form-label" style="display: flex; align-items: center; justify-content: space-between;">
+                  <span><i class="fa-solid fa-wheat-awn"></i> 급식 알레르기 유발 식품 필터링 (19대 식품군)</span>
+                  <span style="font-size: 0.75rem; color: var(--accent-pink);">선택 시 급식표에 경고 표시</span>
+                </label>
+                <div class="allergy-selector-grid" id="allergy-checkbox-container">
+                  <!-- Javascript Injection (1~19번) -->
+                </div>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem;">
+                <button type="submit" class="btn-primary">
+                  <i class="fa-solid fa-floppy-disk"></i> 프로필 및 맞춤 설정 저장
+                </button>
+              </div>
+            </form>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ========================================================
+         MODALS
+         ======================================================== -->
+    
+    <!-- 1. 인증/로그인 모달 (GitHub & Google Multi-OAuth) -->
+    <div class="modal-overlay" id="modal-auth">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h2 class="modal-title">로그인 및 본인 인증</h2>
+          <button class="modal-close-btn" onclick="app.closeModal('modal-auth')">&times;</button>
+        </div>
+
+        <p style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 1.5rem;">
+          대진전자통신고 알리미 서비스는 Supabase 멀티 OAuth를 지원합니다.
+        </p>
+
+        <div class="oauth-btn-group">
+          <!-- GitHub OAuth (PRD v8.0 임시 전면 개방 정책: 블랙리스트 외 누구나 접속) -->
+          <div style="background: var(--bg-tertiary); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+              <span style="font-weight: 700; font-size: 0.9rem;"><i class="fa-brands fa-github"></i> GitHub 소셜 로그인</span>
+              <span class="role-badge github" style="font-size: 0.68rem;">전체 사용자 개방</span>
+            </div>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+              블랙리스트에 등재되지 않은 계정이라면 학교 도메인 여부와 상관없이 즉시 이용 가능합니다.
+            </p>
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="text" class="form-input" id="github-username-input" placeholder="GitHub 사용자명 (예: my-github-id)" style="font-size: 0.85rem; padding: 0.5rem 0.75rem;">
+              <button class="btn-primary" style="white-space: nowrap; padding: 0.5rem 1rem;" onclick="app.handleGitHubLogin()">
+                연동 로그인
+              </button>
+            </div>
+          </div>
+
+          <!-- Google OAuth (PRD v8.0 엄격한 학교 도메인 권한 제도) -->
+          <div style="background: var(--bg-tertiary); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); margin-top: 0.5rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+              <span style="font-weight: 700; font-size: 0.9rem;"><i class="fa-brands fa-google"></i> Google 학교 계정 로그인</span>
+              <span class="role-badge student" style="font-size: 0.68rem;">도메인 권한 분리</span>
+            </div>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+              학생(@pdj.hs.kr), 교직원(@pdj.ht.kr / @korea.kr) 도메인만 자동 부여되며, 일반 계정은 승인이 필요합니다.
+            </p>
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="email" class="form-input" id="google-email-input" placeholder="학교 구글 이메일 주소 입력" style="font-size: 0.85rem; padding: 0.5rem 0.75rem;">
+              <button class="btn-primary" style="white-space: nowrap; padding: 0.5rem 1rem;" onclick="app.handleGoogleLogin()">
+                Google 로그인
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 1.5rem; text-align: center;">
+          <button class="btn-pill" onclick="app.closeModal('modal-auth')">둘러보기 유지 (게스트 모드)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 게시글 작성 모달 -->
+    <div class="modal-overlay" id="modal-write-post">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h2 class="modal-title">새 게시물 작성</h2>
+          <button class="modal-close-btn" onclick="app.closeModal('modal-write-post')">&times;</button>
+        </div>
+
+        <form id="form-write-post" onsubmit="app.submitNewPost(event)">
+          <div class="form-group">
+            <label class="form-label" for="post-title-input">제목</label>
+            <input type="text" class="form-input" id="post-title-input" placeholder="게시물 제목을 입력하세요" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="post-content-input">내용</label>
+            <textarea class="form-input" id="post-content-input" rows="5" placeholder="자유롭게 이야기를 나누어 보세요. (욕설/비방 시 제재될 수 있습니다)" required></textarea>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+            <button type="button" class="btn-pill" onclick="app.closeModal('modal-write-post')">취소</button>
+            <button type="submit" class="btn-primary">등록하기</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 3. 게시글 수정 모달 (30분 이내 수정 / 10초 쿨타임 무결성 검증) -->
+    <div class="modal-overlay" id="modal-edit-post">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h2 class="modal-title">게시물 수정</h2>
+          <button class="modal-close-btn" onclick="app.closeModal('modal-edit-post')">&times;</button>
+        </div>
+
+        <div style="margin-bottom: 1rem; font-size: 0.8rem; color: var(--accent-amber); display: flex; align-items: center; gap: 0.4rem;">
+          <i class="fa-solid fa-stopwatch"></i>
+          <span>작성 후 30분 이내에만 수정 가능합니다. (신고 게시물은 10초 쿨타임 적용)</span>
+        </div>
+
+        <form id="form-edit-post" onsubmit="app.submitEditPost(event)">
+          <input type="hidden" id="edit-post-id">
+          <div class="form-group">
+            <label class="form-label" for="edit-post-content">수정할 내용</label>
+            <textarea class="form-input" id="edit-post-content" rows="6" required></textarea>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+            <button type="button" class="btn-pill" onclick="app.closeModal('modal-edit-post')">취소</button>
+            <button type="submit" class="btn-primary">수정 완료</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 4. 교직원 전용: 감사 로그(Audit Logs) 팝업 모달 -->
+    <div class="modal-overlay" id="modal-audit-logs">
+      <div class="modal-box" style="max-width: 650px;">
+        <div class="modal-header">
+          <h2 class="modal-title"><i class="fa-solid fa-file-shield"></i> 교직원 etc 승인 감사 로그</h2>
+          <button class="modal-close-btn" onclick="app.closeModal('modal-audit-logs')">&times;</button>
+        </div>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
+          외부 계정 승인 시 담당 교사 및 승인 일시가 DB 감사 로그에 영구 기록됩니다.
+        </p>
+        <div id="audit-logs-list" style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 400px; overflow-y: auto;">
+          <!-- Javascript Dynamic Injection -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 🍞 Toast Notification Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+  </div>
+
+  <!-- Scripts -->
+  <script src="data.js"></script>
+  <script src="supabase-client.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

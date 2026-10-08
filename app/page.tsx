@@ -46,6 +46,14 @@ function GithubIcon({ size = 16 }: { size?: number }) {
   );
 }
 
+function getTodayDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function HomePage() {
   // 상태 관리
   const [currentTab, setCurrentTab] = useState<'main' | 'schedule' | 'academic' | 'meals' | 'board' | 'alerts' | 'profile'>('main');
@@ -55,7 +63,7 @@ export default function HomePage() {
   // 시간표 뷰 상태
   const [scheduleView, setScheduleView] = useState<'daily' | 'weekly'>('daily');
   const [selectedClass, setSelectedClass] = useState<string>('1-4'); // NEIS 대진전통고 1-4반 기본
-  const [selectedDate, setSelectedDate] = useState<string>('2026-10-14'); // 기본 고등학교 시간표 일자
+  const [selectedDate, setSelectedDate] = useState<string>(''); // 기본 현재 날짜 (클라이언트 마운트 시 자동 설정)
 
   // NEIS API 실시간 상태
   const [neisClasses, setNeisClasses] = useState<NeisClassItem[]>([]);
@@ -145,7 +153,8 @@ export default function HomePage() {
 
   const loadNeisTimetable = async (grade: number | string, classNm: number | string, dateStr: string = selectedDate) => {
     try {
-      const ymd = dateStr.replace(/-/g, '');
+      const effectiveDate = dateStr || getTodayDateString();
+      const ymd = effectiveDate.replace(/-/g, '');
       const res = await fetch(`/api/neis/timetable?grade=${grade}&classNm=${classNm}&ymd=${ymd}`);
       const json = await res.json();
       if (json.success) {
@@ -160,6 +169,10 @@ export default function HomePage() {
 
   // 초기 로딩
   useEffect(() => {
+    // 1. 현재 날짜를 기본 기준으로 설정
+    const todayStr = getTodayDateString();
+    setSelectedDate(todayStr);
+
     const profile = supabaseService.getCurrentProfile();
     if (profile) {
       setCurrentUser(profile);
@@ -180,8 +193,9 @@ export default function HomePage() {
     loadNeisMeals();
   }, []);
 
-  // 선택된 학급이나 날짜가 바뀌면 NEIS 시간표 호출
+  // 선택된 학급이나 날짜가 바뀌면 NEIS 시간표 호출 (현재 날짜가 초기화된 후 실행)
   useEffect(() => {
+    if (!selectedDate) return;
     const parts = selectedClass.split('-');
     const g = parts[0] || '1';
     const c = parts[1] || '4';
@@ -626,26 +640,16 @@ export default function HomePage() {
                               <span className="subject-badge">{p.department || displayDepartment}</span>
                             </div>
                             <div className="period-sub">
-                              <span>NEIS 실시간 수업 정보</span>
+                              <span>정규 수업</span>
                             </div>
                           </div>
                           {p.period === 4 && <span className="role-badge student">현재 교시</span>}
                         </div>
                       ))
                     ) : (
-                      currentFallback.weekly.thu.map((p, idx) => (
-                        <div key={idx} className={`period-card ${p.period === 4 ? 'current-period' : ''}`}>
-                          <span className="period-num">{p.period}교시</span>
-                          <div className="period-main">
-                            <div className="subject-name">
-                              {p.subject}
-                              <span className="subject-badge">{p.room}</span>
-                            </div>
-                            <div className="period-sub">담당: {p.teacher}</div>
-                          </div>
-                          {p.period === 4 && <span className="role-badge student">현재 수업</span>}
-                        </div>
-                      ))
+                      <div style={{ padding: '2.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                        등록된 시간표 정보가 없습니다.
+                      </div>
                     )}
                   </div>
                 </div>
@@ -808,7 +812,7 @@ export default function HomePage() {
                 <div className="card-header">
                   <div>
                     <h2 className="card-title">{selectedClass} 일일 정규 시간표</h2>
-                    <span className="card-subtitle">{displayDepartment} (NEIS Open API 공식 시간표)</span>
+                    <span className="card-subtitle">{displayDepartment} ({selectedDate})</span>
                   </div>
                 </div>
                 <div className="schedule-container">
@@ -821,23 +825,14 @@ export default function HomePage() {
                             {p.subject}
                             <span className="subject-badge">{p.department || displayDepartment}</span>
                           </div>
-                          <div className="period-sub">NEIS 부산광역시교육청 공식 시간표</div>
+                          <div className="period-sub">{p.department || displayDepartment}</div>
                         </div>
                       </div>
                     ))
                   ) : (
-                    currentFallback.weekly.thu.map((p, idx) => (
-                      <div key={idx} className="period-card">
-                        <span className="period-num">{p.period}교시</span>
-                        <div className="period-main">
-                          <div className="subject-name">
-                            {p.subject}
-                            <span className="subject-badge">{p.room}</span>
-                          </div>
-                          <div className="period-sub">담당: {p.teacher}</div>
-                        </div>
-                      </div>
-                    ))
+                    <div style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.92rem' }}>
+                      등록된 시간표 정보가 없습니다.
+                    </div>
                   )}
                 </div>
               </div>
@@ -845,19 +840,14 @@ export default function HomePage() {
               <div className="card">
                 <div className="card-header">
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                      <h2 className="card-title">{selectedClass} 전체 주간 시간표 매트릭스</h2>
-                      <span className="role-badge student" style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                        ⚡ NEIS 공식 실시간 연동
-                      </span>
-                    </div>
+                    <h2 className="card-title">{selectedClass} 전체 주간 시간표 매트릭스</h2>
                     <span className="card-subtitle">
-                      {displayDepartment} | {weeklyDates ? `${weeklyDates.mon} ~ ${weeklyDates.fri} 정규 교육과정` : '월요일 ~ 금요일 1~7교시 전체 편성표'}
+                      {displayDepartment} | {weeklyDates ? `${weeklyDates.mon} ~ ${weeklyDates.fri} 주간 편성표` : '월요일 ~ 금요일 1~7교시'}
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                      총 {liveWeeklyTimetable ? (['mon','tue','wed','thu','fri'] as const).reduce((acc, d) => acc + (liveWeeklyTimetable[d]?.length || 0), 0) : 32}교시 배정
+                      총 {liveWeeklyTimetable ? (['mon','tue','wed','thu','fri'] as const).reduce((acc, d) => acc + (liveWeeklyTimetable[d]?.length || 0), 0) : 0}교시 배정
                     </span>
                   </div>
                 </div>
@@ -889,7 +879,6 @@ export default function HomePage() {
                           <td style={{ fontWeight: 800 }}>{period}교시</td>
                           {(['mon', 'tue', 'wed', 'thu', 'fri'] as const).map(day => {
                             const liveP = liveWeeklyTimetable?.[day]?.find(x => x.period === period);
-                            const fallbackP = currentFallback.weekly[day]?.find(x => x.period === period);
                             const isSelectedDay = selectedDate === weeklyDates?.[day];
 
                             return (
@@ -898,34 +887,20 @@ export default function HomePage() {
                                 style={{
                                   background: isSelectedDay
                                     ? 'rgba(99, 102, 241, 0.05)'
-                                    : liveP
-                                    ? 'rgba(99, 102, 241, 0.02)'
                                     : undefined,
-                                  transition: 'background 0.2s ease'
+                                  minHeight: '52px'
                                 }}
                               >
                                 {liveP ? (
                                   <div>
-                                    <div style={{ fontWeight: 700, fontSize: '0.92rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                      <span>{liveP.subject}</span>
-                                      <span style={{ fontSize: '0.62rem', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 700 }}>
-                                        NEIS
-                                      </span>
+                                    <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>
+                                      {liveP.subject}
                                     </div>
                                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
                                       {liveP.department || displayDepartment}
                                     </div>
                                   </div>
-                                ) : fallbackP ? (
-                                  <div>
-                                    <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>{fallbackP.subject}</div>
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                                      {fallbackP.teacher} ({fallbackP.room})
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>-</span>
-                                )}
+                                ) : null}
                               </td>
                             );
                           })}

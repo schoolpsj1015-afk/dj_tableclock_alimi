@@ -338,85 +338,11 @@ export const MEAL_DATA: MealDay[] = [
   }
 ];
 
-// 학사 일정 데이터
-export const ACADEMIC_EVENTS: AcademicEvent[] = [
-  { id: 1, title: "2학기 1차 지필평가 (중간고사)", date: "2026-10-15", dDayText: "D-7", category: "exam", desc: "전 학년 지필평가 실시 (4교시 단축 수업)" },
-  { id: 2, title: "대진 학술·IT 캡스톤 페스티벌", date: "2026-10-23", dDayText: "D-15", category: "festival", desc: "소프트웨어/전자통신과 졸업작품 전시 및 기술 발표" },
-  { id: 3, title: "현장체험학습 (1, 2학년)", date: "2026-11-04", dDayText: "D-27", category: "activity", desc: "진로 및 IT 테크 기업 탐방 활동" },
-  { id: 4, title: "2027 대진 신입생 입학설명회", date: "2026-11-12", dDayText: "D-35", category: "school", desc: "중학교 3학년 대상 학과 투어 및 설명회" },
-  { id: 5, title: "2학기 2차 지필평가 (기말고사)", date: "2026-12-14", dDayText: "D-67", category: "exam", desc: "2학기 최종 학기말 지필평가" },
-  { id: 6, title: "겨울방학식 및 종업식", date: "2027-01-08", dDayText: "D-92", category: "vacation", desc: "2026학년도 겨울방학 시작" }
-];
+// 학사 일정 데이터 (NEIS Open API 실시간 동기화로 대체)
+export const ACADEMIC_EVENTS: AcademicEvent[] = [];
 
-// 초기 데모 게시글
-export const INITIAL_POSTS: PostItem[] = [
-  {
-    id: "post-101",
-    title: "🔥 이번 주 캡스톤 페스티벌 프론트엔드 작업 함께할 팀원 구합니다!",
-    content: "Next.js랑 Supabase로 IoT 실시간 센서 대시보드 만들고 있는데 디자인 감각 있으신 분이나 React 다뤄보신 분 환영합니다! 댓글이나 깃허브로 연락주세요.",
-    authorId: "user-student-demo",
-    authorNickname: "코드마스터_2026",
-    authorRole: "student",
-    authorAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop",
-    githubUsername: "psj-coder",
-    createdAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(), // 15분 전 (30분 이내 수정 가능)
-    updatedAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-    likes: 12,
-    commentsCount: 3,
-    isReported: false,
-    isDeleted: false,
-    snapshots: []
-  },
-  {
-    id: "post-102",
-    title: "오늘 급식 안심 돈까스 퀄리티 대박이네요 ㄷㄷ",
-    content: "브라운 소스도 진짜 맛있고 순두부찌개 칼칼해서 비오는 날 딱 맞춤입니다. 영양사 선생님 항상 감사합니다!!",
-    authorId: "user-student-02",
-    authorNickname: "맛있는급식탐방",
-    authorRole: "student",
-    authorAvatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop",
-    githubUsername: "yummy-daejin",
-    createdAt: new Date(Date.now() - 1000 * 60 * 75).toISOString(), // 75분 전 (수정 불가)
-    updatedAt: new Date(Date.now() - 1000 * 60 * 75).toISOString(),
-    likes: 24,
-    commentsCount: 5,
-    isReported: false,
-    isDeleted: false,
-    snapshots: []
-  },
-  {
-    id: "post-103",
-    title: "🚨 [신고 접수된 샘플] 과도한 비방 및 불쾌한 내용 게시글",
-    content: "누가 복도에서 시끄럽게 뛰어다니냐 진짜 개념 밥말아먹었네 ㅡㅡ 잡히면 가만안둠",
-    authorId: "user-student-bad",
-    authorNickname: "익명폭격기",
-    authorRole: "student",
-    authorAvatar: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&h=100&fit=crop",
-    githubUsername: "angry-bird-afk",
-    createdAt: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-    updatedAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-    likes: 0,
-    commentsCount: 1,
-    isReported: true,
-    reportReason: "과도한 공격성 언어 및 비방",
-    reportedAt: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
-    isDeleted: false,
-    snapshots: [
-      {
-        snapshotId: "snap-1",
-        modifiedAt: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
-        content: "누가 복도에서 시끄럽게 뛰어다니냐 진짜... (수정본 1: 단어 완화)",
-        authorNickname: "익명폭격기"
-      },
-      {
-        snapshotId: "snap-2",
-        modifiedAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-        content: "복도에서 조용히 다녀주세요 부탁드립니다. (수정본 2: 최종 스냅샷)",
-        authorNickname: "익명폭격기"
-      }
-    ]
-  }
-];
+// 자유게시판 게시글 목록 (초기 임시 데이터 제거)
+export const INITIAL_POSTS: PostItem[] = [];
 
 // 기본 블랙리스트 목록 (GitHub 로그인 시 차단 검증)
 export const INITIAL_BLACKLIST: BlacklistUser[] = [

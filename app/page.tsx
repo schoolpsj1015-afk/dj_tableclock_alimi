@@ -22,7 +22,13 @@ import {
   ExternalLink,
   GraduationCap,
   School,
-  FolderOpen
+  FolderOpen,
+  Search,
+  Filter,
+  CalendarDays,
+  Flame,
+  Check,
+  ChevronRight
 } from 'lucide-react';
 
 import {
@@ -30,13 +36,12 @@ import {
   DEPARTMENTS,
   SCHEDULE_DATA,
   MEAL_DATA,
-  ACADEMIC_EVENTS,
   UserProfile,
   PostItem,
   AuditLogItem
 } from '../lib/data';
 import { supabaseService } from '../lib/supabase';
-import { NeisClassItem, NeisPeriodItem, NeisMealItem } from '../lib/neis';
+import { NeisClassItem, NeisPeriodItem, NeisMealItem, NeisAcademicEvent } from '../lib/neis';
 
 function GithubIcon({ size = 16 }: { size?: number }) {
   return (
@@ -46,12 +51,31 @@ function GithubIcon({ size = 16 }: { size?: number }) {
   );
 }
 
+// 오늘 날짜 문자열 (YYYY-MM-DD)
 function getTodayDateString(): string {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${d}`;
+}
+
+// 주말(토/일)일 경우 다음 주 월요일부터 불러오도록 자동 보정
+function getTargetDateString(): string {
+  const now = new Date();
+  const day = now.getDay(); // 0: 일, 6: 토
+  const target = new Date(now);
+  if (day === 6) {
+    // 토요일 -> +2일 (다음 주 월요일)
+    target.setDate(now.getDate() + 2);
+  } else if (day === 0) {
+    // 일요일 -> +1일 (다음 주 월요일)
+    target.setDate(now.getDate() + 1);
+  }
+  const year = target.getFullYear();
+  const month = String(target.getMonth() + 1).padStart(2, '0');
+  const d = String(target.getDate()).padStart(2, '0');
+  return `${year}-${month}-${d}`;
 }
 
 export default function HomePage() {
@@ -84,6 +108,16 @@ export default function HomePage() {
   } | null>(null);
   const [liveMeals, setLiveMeals] = useState<NeisMealItem[]>([]);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
+  // 학사일정 실시간 상태 (NEIS SchoolSchedule Open API)
+  const [liveSchedule, setLiveSchedule] = useState<NeisAcademicEvent[]>([]);
+  const [scheduleLoading, setScheduleLoading] = useState<boolean>(false);
+  const [scheduleAy, setScheduleAy] = useState<string>('2026'); // 학년도 (2026 기본)
+  const [scheduleFilterCategory, setScheduleFilterCategory] = useState<string>('all');
+  const [scheduleFilterGrade, setScheduleFilterGrade] = useState<string>('all');
+  const [scheduleFilterMonth, setScheduleFilterMonth] = useState<string>('all');
+  const [scheduleSearchQuery, setScheduleSearchQuery] = useState<string>('');
+  const [hidePastSchedule, setHidePastSchedule] = useState<boolean>(false);
 
   // 데이터 상태
   const [posts, setPosts] = useState<PostItem[]>([]);
@@ -167,6 +201,23 @@ export default function HomePage() {
     }
   };
 
+  // 4. NEIS 학사일정 실시간 조회
+  const loadNeisSchedule = async (ay: string = scheduleAy, dateStr: string = selectedDate) => {
+    try {
+      setScheduleLoading(true);
+      const baseDate = dateStr || getTodayDateString();
+      const res = await fetch(`/api/neis/schedule?ay=${ay}&baseDate=${baseDate}`);
+      const json = await res.json();
+      if (json.success && json.data) {
+        setLiveSchedule(json.data);
+      }
+    } catch (e) {
+      console.warn('Failed to load NEIS schedule', e);
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
+
   // 초기 로딩
   useEffect(() => {
     // 1. 현재 날짜를 기본 기준으로 설정
@@ -191,7 +242,78 @@ export default function HomePage() {
     // NEIS 라이브 데이터 불러오기
     loadNeisClasses();
     loadNeisMeals();
+    loadNeisSchedule('2026', todayStr);
   }, []);
+
+  // 학년도 또는 날짜 변경 시 학사일정 재동기화
+  useEffect(() => {
+    if (selectedDate) {
+      loadNeisSchedule(scheduleAy, selectedDate);
+    }
+  }, [scheduleAy]);
+
+  // 대시보드 메인 배너용 가장 임박한 주요 학사 일정
+  const featuredEvent = React.useMemo(() => {
+    if (!liveSchedule || liveSchedule.length === 0) return null;
+    const upcoming = liveSchedule.filter(e => e.dDayNum >= 0);
+    if (upcoming.length === 0) return liveSchedule[0];
+    const examSoon = upcoming.find(e => e.category === 'exam');
+    if (examSoon && examSoon.dDayNum <= 14) return examSoon;
+    return upcoming[0];
+  }, [liveSchedule]);
+
+  // 상단 TOP 4 다가오는 주요 D-Day 일정 (시험, 공휴일, 방학 등)
+  const topUpcomingEvents = React.useMemo(() => {
+    if (!liveSchedule || liveSchedule.length === 0) return [];
+    return liveSchedule.filter(e => e.dDayNum >= 0).slice(0, 4);
+  }, [liveSchedule]);
+
+  // 필터링된 학사 일정 목록
+  const filteredSchedule = React.useMemo(() => {
+    return liveSchedule.filter(ev => {
+      if (hidePastSchedule && ev.dDayNum < 0) return false;
+      if (scheduleFilterCategory !== 'all' && ev.category !== scheduleFilterCategory) return false;
+      if (scheduleFilterGrade !== 'all') {
+        const gradeNum = parseInt(scheduleFilterGrade, 10);
+        if (ev.grades && ev.grades.length > 0 && !ev.grades.includes(gradeNum)) return false;
+      }
+      if (scheduleFilterMonth !== 'all') {
+        const eventMonth = ev.rawYmd.substring(4, 6);
+        if (eventMonth !== scheduleFilterMonth) return false;
+      }
+      if (scheduleSearchQuery.trim()) {
+        const q = scheduleSearchQuery.trim().toLowerCase();
+        const matchName = ev.eventNm.toLowerCase().includes(q);
+        const matchContent = (ev.content || '').toLowerCase().includes(q);
+        const matchDate = ev.date.includes(q);
+        if (!matchName && !matchContent && !matchDate) return false;
+      }
+      return true;
+    });
+  }, [liveSchedule, hidePastSchedule, scheduleFilterCategory, scheduleFilterGrade, scheduleFilterMonth, scheduleSearchQuery]);
+
+  // 월별 그룹화된 학사일정 매트릭스
+  const groupedScheduleByMonth = React.useMemo(() => {
+    const groups: { [monthKey: string]: { monthTitle: string; monthNum: string; isCurrent: boolean; events: NeisAcademicEvent[] } } = {};
+    const curYearMonth = (selectedDate || '2026-10-08').replace(/-/g, '').substring(0, 6);
+
+    filteredSchedule.forEach(ev => {
+      const year = ev.rawYmd.substring(0, 4);
+      const month = ev.rawYmd.substring(4, 6);
+      const key = `${year}-${month}`;
+      if (!groups[key]) {
+        groups[key] = {
+          monthTitle: `${year}년 ${parseInt(month, 10)}월`,
+          monthNum: month,
+          isCurrent: `${year}${month}` === curYearMonth,
+          events: []
+        };
+      }
+      groups[key].events.push(ev);
+    });
+
+    return Object.entries(groups);
+  }, [filteredSchedule, selectedDate]);
 
   // 선택된 학급이나 날짜가 바뀌면 NEIS 시간표 호출 (현재 날짜가 초기화된 후 실행)
   useEffect(() => {
@@ -290,13 +412,14 @@ export default function HomePage() {
       const syncTasks: Promise<any>[] = [
         loadNeisClasses(),
         loadNeisMeals(),
-        loadNeisTimetable(parts[0], parts[1], selectedDate)
+        loadNeisTimetable(parts[0], parts[1], selectedDate),
+        loadNeisSchedule(scheduleAy, selectedDate)
       ];
       if (currentUser?.role === 'teacher') {
         syncTasks.push(supabaseService.manualSyncSchedule());
       }
       await Promise.all(syncTasks);
-      showToast('NEIS 공식 Open API(전체 주간 매트릭스·일일 시간표·급식) 최신 데이터가 성공적으로 동기화되었습니다!', 'success');
+      showToast('NEIS 공식 Open API(학사일정·시간표·급식) 최신 데이터가 성공적으로 동기화되었습니다!', 'success');
     } catch (err: any) {
       showToast(err.message || '동기화 실패', 'error');
     } finally {
@@ -654,17 +777,51 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* D-Day 배너 */}
-                <div className="card" style={{ background: 'var(--bg-tertiary)', padding: '1.15rem 1.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <span style={{ fontSize: '1.5rem' }}>🎯</span>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>2학기 1차 지필평가 (중간고사)</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>2026. 10. 15 ~ 10. 19 전 학년 실시</div>
+                {/* 실시간 NEIS 학사일정 D-Day 배너 */}
+                <div
+                  className="card"
+                  style={{
+                    background: 'var(--bg-tertiary)',
+                    padding: '1.15rem 1.5rem',
+                    cursor: 'pointer',
+                    transition: 'all var(--transition-normal)'
+                  }}
+                  onClick={() => setCurrentTab('academic')}
+                  title="클릭하여 전체 학사일정 보기"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
+                      <span style={{ fontSize: '1.5rem', flexShrink: 0 }}>
+                        {featuredEvent?.category === 'exam' ? '📝' : featuredEvent?.category === 'vacation' ? '🏖️' : featuredEvent?.category === 'holiday' ? '🔴' : '🎯'}
+                      </span>
+                      <div style={{ overflow: 'hidden' }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                          {featuredEvent ? featuredEvent.eventNm : '학사일정 동기화 중...'}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {featuredEvent
+                            ? `${featuredEvent.date} (${featuredEvent.dayOfWeek}) • ${featuredEvent.targetGrades} ${featuredEvent.content ? `• ${featuredEvent.content}` : ''}`
+                            : '부산교육청 NEIS Open API 실시간 연동'}
+                        </div>
                       </div>
                     </div>
-                    <span className="role-badge student" style={{ fontSize: '0.9rem', padding: '0.35rem 0.85rem' }}>D-7</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                      <span
+                        className={`dday-badge ${
+                          featuredEvent
+                            ? featuredEvent.dDayNum === 0
+                              ? 'dday-today'
+                              : featuredEvent.dDayNum <= 7
+                              ? 'dday-urgent'
+                              : 'dday-soon'
+                            : 'dday-soon'
+                        }`}
+                        style={{ fontSize: '0.88rem', padding: '0.35rem 0.85rem' }}
+                      >
+                        {featuredEvent ? featuredEvent.dDayText : 'D-Day'}
+                      </span>
+                      <ChevronRight size={16} style={{ color: 'var(--text-muted)' }} />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -915,29 +1072,333 @@ export default function HomePage() {
         )}
 
         {/* ========================================================
-             TAB 3: 학사일정
+             TAB 3: 학사일정 (NEIS Open API 공식 실시간 연동)
+             - ATPT_OFCDC_SC_CODE: C10 (부산광역시교육청)
+             - SD_SCHUL_CODE: 7150597 (대진전자통신고등학교)
              ======================================================== */}
         {currentTab === 'academic' && (
-          <section>
-            <div className="sub-tabs-bar">
-              <div>
-                <h2 style={{ fontSize: '1.35rem', fontWeight: 800 }}>2026학년도 대진 학사일정 & D-Day</h2>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>NEIS 학사정보 공식 연동</span>
+          <section className="academic-container">
+            {/* 🌟 1. 상단 히어로 배너 & TOP D-Day 위젯 */}
+            <div className="academic-hero">
+              <div className="hero-header">
+                <div className="hero-title-group">
+                  <h2>
+                    <CalendarDays size={26} style={{ color: 'var(--accent-secondary)' }} />
+                    대진전자통신고 {scheduleAy}학년도 학사일정 & D-Day
+                  </h2>
+                  <p>
+                    부산광역시교육청 NEIS Open API 공식 연동 • 학교코드 7150597 • 매시간 실시간 동기화
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <div className="select-group">
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>학년도:</label>
+                    <select
+                      className="custom-select"
+                      value={scheduleAy}
+                      onChange={(e) => setScheduleAy(e.target.value)}
+                    >
+                      <option value="2026">2026학년도</option>
+                      <option value="2025">2025학년도</option>
+                    </select>
+                  </div>
+
+                  <button
+                    className="btn-pill"
+                    onClick={() => loadNeisSchedule(scheduleAy, selectedDate)}
+                    disabled={scheduleLoading}
+                    title="NEIS 학사일정 최신 데이터 수동 새로고침"
+                  >
+                    <RotateCw size={14} className={scheduleLoading ? 'spin-icon' : ''} />
+                    {scheduleLoading ? '조회 중...' : '학사일정 새로고침'}
+                  </button>
+                </div>
+              </div>
+
+              {/* 통계 바 */}
+              <div className="hero-stats-row" style={{ marginBottom: '1.25rem' }}>
+                <div className="stat-pill">
+                  <span>등록된 총 일정:</span>
+                  <strong>{liveSchedule.length}건</strong>
+                </div>
+                <div className="stat-pill">
+                  <span>다가오는 일정:</span>
+                  <strong style={{ color: 'var(--accent-cyan)' }}>
+                    {liveSchedule.filter(e => e.dDayNum >= 0).length}건
+                  </strong>
+                </div>
+                <div className="stat-pill">
+                  <span>📝 시험·평가:</span>
+                  <strong style={{ color: 'var(--accent-pink)' }}>
+                    {liveSchedule.filter(e => e.category === 'exam').length}건
+                  </strong>
+                </div>
+                <div className="stat-pill">
+                  <span>🏖️ 방학·휴업:</span>
+                  <strong style={{ color: 'var(--accent-cyan)' }}>
+                    {liveSchedule.filter(e => e.category === 'vacation').length}건
+                  </strong>
+                </div>
+                <div className="stat-pill">
+                  <span>🔴 공휴일:</span>
+                  <strong style={{ color: 'var(--accent-emerald)' }}>
+                    {liveSchedule.filter(e => e.isHoliday || e.category === 'holiday').length}건
+                  </strong>
+                </div>
+              </div>
+
+              {/* TOP 다가오는 D-Day 하이라이트 카드 그리드 */}
+              {topUpcomingEvents.length > 0 && (
+                <div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.65rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Flame size={14} style={{ color: 'var(--accent-pink)' }} />
+                    가장 가까운 주요 D-Day 일정 TOP {topUpcomingEvents.length}
+                  </div>
+                  <div className="hero-dday-grid">
+                    {topUpcomingEvents.map((ev) => (
+                      <div
+                        key={ev.id}
+                        className="hero-dday-card"
+                        onClick={() => {
+                          setScheduleSearchQuery(ev.eventNm);
+                          setScheduleFilterCategory('all');
+                          setScheduleFilterMonth('all');
+                        }}
+                        title="클릭하여 해당 일정 검색"
+                      >
+                        <div className="hero-dday-top">
+                          <span
+                            className={`dday-badge ${
+                              ev.dDayNum === 0
+                                ? 'dday-today'
+                                : ev.dDayNum <= 7
+                                ? 'dday-urgent'
+                                : ev.dDayNum <= 30
+                                ? 'dday-soon'
+                                : 'dday-future'
+                            }`}
+                          >
+                            {ev.dDayText}
+                          </span>
+                          <span className={`category-badge category-${ev.category}`}>
+                            {ev.category === 'exam' ? '📝 시험' : ev.category === 'vacation' ? '🏖️ 방학' : ev.category === 'holiday' ? '🔴 공휴일' : ev.category === 'festival' ? '🎪 축제' : ev.category === 'activity' ? '🚩 활동' : '🏫 학사'}
+                          </span>
+                        </div>
+                        <div>
+                          <h4>{ev.eventNm}</h4>
+                          <p>{ev.content || `${ev.targetGrades} 대상 학사 일정`}</p>
+                        </div>
+                        <div className="hero-dday-bottom">
+                          <span>{ev.date} ({ev.dayOfWeek})</span>
+                          <span className="grade-pill">{ev.targetGrades}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 🔍 2. 스마트 필터 & 검색 툴바 */}
+            <div className="academic-filter-card">
+              <div className="filter-row-top">
+                {/* 카테고리 필터 칩 */}
+                <div className="filter-chips-group">
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', marginRight: '0.25rem' }}>분류:</span>
+                  {[
+                    { id: 'all', label: '전체' },
+                    { id: 'exam', label: '📝 시험/평가' },
+                    { id: 'vacation', label: '🏖️ 방학/휴업' },
+                    { id: 'festival', label: '🎪 축제/행사' },
+                    { id: 'activity', label: '🚩 체험학습' },
+                    { id: 'holiday', label: '🔴 공휴일' }
+                  ].map(c => (
+                    <button
+                      key={c.id}
+                      className={`filter-chip-btn ${scheduleFilterCategory === c.id ? 'active' : ''}`}
+                      onClick={() => setScheduleFilterCategory(c.id)}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 학년 필터 & 검색 & 지난 일정 토글 */}
+                <div className="filter-search-group">
+                  <select
+                    className="custom-select"
+                    value={scheduleFilterGrade}
+                    onChange={(e) => setScheduleFilterGrade(e.target.value)}
+                    style={{ padding: '0.45rem 0.85rem', fontSize: '0.82rem' }}
+                  >
+                    <option value="all">전체 학년</option>
+                    <option value="1">1학년 전용</option>
+                    <option value="2">2학년 전용</option>
+                    <option value="3">3학년 전용</option>
+                  </select>
+
+                  <div className="search-input-wrapper">
+                    <Search size={14} className="search-icon-pos" />
+                    <input
+                      type="text"
+                      placeholder="일정명·내용 검색..."
+                      value={scheduleSearchQuery}
+                      onChange={(e) => setScheduleSearchQuery(e.target.value)}
+                    />
+                  </div>
+
+                  <button
+                    className={`filter-chip-btn ${hidePastSchedule ? 'active' : ''}`}
+                    onClick={() => setHidePastSchedule(!hidePastSchedule)}
+                    title="이미 종료된 과거 학사일정 숨기기"
+                  >
+                    {hidePastSchedule && <Check size={12} />} 다가오는 일정만
+                  </button>
+                </div>
+              </div>
+
+              {/* 월별 빠른 필터 칩 바 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>월별 이동:</span>
+                <div className="month-selector-bar">
+                  <button
+                    className={`month-chip ${scheduleFilterMonth === 'all' ? 'active' : ''}`}
+                    onClick={() => setScheduleFilterMonth('all')}
+                  >
+                    전체 월
+                  </button>
+                  {[
+                    { m: '03', label: '3월' },
+                    { m: '04', label: '4월' },
+                    { m: '05', label: '5월' },
+                    { m: '06', label: '6월' },
+                    { m: '07', label: '7월' },
+                    { m: '08', label: '8월' },
+                    { m: '09', label: '9월' },
+                    { m: '10', label: '10월 (현재)', current: true },
+                    { m: '11', label: '11월' },
+                    { m: '12', label: '12월' },
+                    { m: '01', label: '1월' },
+                    { m: '02', label: '2월' }
+                  ].map(mItem => (
+                    <button
+                      key={mItem.m}
+                      className={`month-chip ${scheduleFilterMonth === mItem.m ? 'active' : ''} ${mItem.current ? 'current-month' : ''}`}
+                      onClick={() => setScheduleFilterMonth(mItem.m)}
+                    >
+                      {mItem.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.25rem' }}>
-              {ACADEMIC_EVENTS.map(ev => (
-                <div key={ev.id} className="card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-                    <span className="role-badge student">{ev.dDayText}</span>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{ev.date}</span>
+            {/* 📅 3. 월별 그룹핑 일정 카드 목록 */}
+            {scheduleLoading ? (
+              <div style={{ padding: '4rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <RotateCw size={28} className="spin-icon" style={{ marginBottom: '1rem', color: 'var(--accent-primary)' }} />
+                <div style={{ fontSize: '1rem', fontWeight: 700 }}>NEIS 학사일정 실시간 불러오는 중...</div>
+                <div style={{ fontSize: '0.82rem', marginTop: '0.35rem' }}>부산광역시교육청 대진전자통신고등학교 공식 데이터를 동기화하고 있습니다.</div>
+              </div>
+            ) : groupedScheduleByMonth.length === 0 ? (
+              <div className="card" style={{ padding: '3.5rem 1rem', textAlign: 'center' }}>
+                <Calendar size={36} style={{ color: 'var(--text-muted)', marginBottom: '0.75rem' }} />
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.4rem' }}>조건에 맞는 학사일정이 없습니다.</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
+                  검색어 또는 필터 조건을 변경해 보십시오.
+                </p>
+                <button
+                  className="btn-pill"
+                  onClick={() => {
+                    setScheduleFilterCategory('all');
+                    setScheduleFilterGrade('all');
+                    setScheduleFilterMonth('all');
+                    setScheduleSearchQuery('');
+                    setHidePastSchedule(false);
+                  }}
+                >
+                  필터 초기화
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                {groupedScheduleByMonth.map(([key, group]) => (
+                  <div key={key} className="month-group-section">
+                    <div className="month-group-header">
+                      <div className="month-group-title">
+                        <span>{group.monthTitle}</span>
+                        {group.isCurrent && <span className="current-tag">CURRENT (이번 달)</span>}
+                      </div>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        총 {group.events.length}개의 학사 일정
+                      </span>
+                    </div>
+
+                    <div className="academic-events-grid">
+                      {group.events.map((ev) => (
+                        <div
+                          key={ev.id}
+                          className={`academic-card ${ev.dDayNum < 0 ? 'is-past' : ''}`}
+                        >
+                          <div className="academic-card-top">
+                            <span
+                              className={`dday-badge ${
+                                ev.dDayNum === 0
+                                  ? 'dday-today'
+                                  : ev.dDayNum < 0
+                                  ? 'dday-past'
+                                  : ev.dDayNum <= 7
+                                  ? 'dday-urgent'
+                                  : ev.dDayNum <= 30
+                                  ? 'dday-soon'
+                                  : 'dday-future'
+                              }`}
+                            >
+                              {ev.dDayText}
+                            </span>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              {ev.isHoliday && <span className="holiday-pill">공휴일</span>}
+                              {ev.category === 'vacation' && <span className="holiday-pill" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>휴업</span>}
+                              <span className="date-text">
+                                <Clock size={12} />
+                                {ev.date} ({ev.dayOfWeek})
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="academic-card-mid">
+                            <h3 className="academic-card-title">{ev.eventNm}</h3>
+                            {ev.content && <p className="academic-card-desc">{ev.content}</p>}
+                          </div>
+
+                          <div className="academic-card-bottom">
+                            <div className="grade-badge-group">
+                              <span className="grade-pill">{ev.targetGrades}</span>
+                            </div>
+
+                            <span className={`category-badge category-${ev.category}`}>
+                              {ev.category === 'exam'
+                                ? '📝 지필/평가'
+                                : ev.category === 'vacation'
+                                ? '🏖️ 방학/휴업'
+                                : ev.category === 'festival'
+                                ? '🎪 축제/행사'
+                                : ev.category === 'activity'
+                                ? '🚩 체험활동'
+                                : ev.category === 'holiday'
+                                ? '🔴 공휴일'
+                                : '🏫 일반학사'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.5rem' }}>{ev.title}</h3>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{ev.desc}</p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
 

@@ -90,8 +90,18 @@ export class SupabaseService {
       localStorage.setItem(STORAGE_PREFIX + "profiles", JSON.stringify(defaultProfiles));
     }
 
-    if (!localStorage.getItem(STORAGE_PREFIX + "posts")) {
-      localStorage.setItem(STORAGE_PREFIX + "posts", JSON.stringify(INITIAL_POSTS));
+    // 초기 임시 mock 게시물 정리 (사용자가 새로 작성하는 글만 유지)
+    const storedPosts = localStorage.getItem(STORAGE_PREFIX + "posts");
+    if (!storedPosts) {
+      localStorage.setItem(STORAGE_PREFIX + "posts", JSON.stringify([]));
+    } else {
+      try {
+        const parsed = JSON.parse(storedPosts);
+        const filtered = parsed.filter((p: any) => !['post-101', 'post-102', 'post-103'].includes(p.id));
+        localStorage.setItem(STORAGE_PREFIX + "posts", JSON.stringify(filtered));
+      } catch {
+        localStorage.setItem(STORAGE_PREFIX + "posts", JSON.stringify([]));
+      }
     }
 
     if (!localStorage.getItem(STORAGE_PREFIX + "audit_logs")) {
@@ -148,15 +158,37 @@ export class SupabaseService {
     return profiles[user.id] || null;
   }
 
-  // GitHub OAuth 로그인 시뮬레이션 (PRD v8.0: 블랙리스트 외 모든 사용자 접속 전면 허용)
+  // GitHub 실제 계정 연동 (현실의 존재하는 모든 GitHub 계정 연동, 가짜 무조건 생성 제거)
   async signInWithGitHub(customUsername: string): Promise<UserProfile> {
-    const rawUsername = customUsername.trim() || `dj-student-${Math.floor(Math.random() * 900 + 100)}`;
-    const email = `${rawUsername}@users.noreply.github.com`;
+    const rawUsername = customUsername.trim();
+    if (!rawUsername) {
+      throw new Error("실제 연동할 본인의 GitHub 사용자명(Username)을 입력해 주십시오.");
+    }
 
-    // 1. 블랙리스트 검증 (Supabase PL/pgSQL 트리거 시뮬레이션)
+    // 1. 실제 현실에 존재하는 GitHub 계정인지 GitHub 공식 API로 검증
+    let ghData: any = null;
+    try {
+      const ghRes = await fetch(`https://api.github.com/users/${encodeURIComponent(rawUsername)}`);
+      if (ghRes.status === 404) {
+        throw new Error(`존재하지 않는 GitHub 계정(@${rawUsername})입니다. 실제 존재하는 본인의 GitHub 아이디를 입력해 주십시오.`);
+      }
+      if (ghRes.ok) {
+        ghData = await ghRes.json();
+      }
+    } catch (err: any) {
+      if (err.message && err.message.includes('존재하지 않는')) {
+        throw err;
+      }
+      console.warn('GitHub API rate limit or network issue, using basic identity', err);
+    }
+
+    const verifiedLogin = ghData?.login || rawUsername;
+    const email = ghData?.email || `${verifiedLogin}@users.noreply.github.com`;
+
+    // 2. 블랙리스트 검증 (Supabase PL/pgSQL 트리거 시뮬레이션)
     const blacklists: BlacklistUser[] = JSON.parse(localStorage.getItem(STORAGE_PREFIX + "blacklists") || "[]");
     const isBanned = blacklists.some(b => 
-      b.username.toLowerCase() === rawUsername.toLowerCase() || 
+      b.username.toLowerCase() === verifiedLogin.toLowerCase() || 
       b.email.toLowerCase() === email.toLowerCase()
     );
 
@@ -164,34 +196,46 @@ export class SupabaseService {
       throw new Error("운영 정책 위반 등으로 인해 이용이 제한된 계정입니다. 관리자(교직원)에게 문의해 주십시오.");
     }
 
-    // 2. 프로필 자동 생성 및 매핑 (handle_new_user 트리거 대응)
-    const userId = "user-github-" + rawUsername;
+    // 3. 실제 GitHub 프로필 정보로 Supabase UserProfile 매핑
+    const userId = "user-github-" + verifiedLogin;
     const profiles: Record<string, UserProfile> = JSON.parse(localStorage.getItem(STORAGE_PREFIX + "profiles") || "{}");
+
+    const realName = ghData?.name || verifiedLogin;
+    const avatarUrl = ghData?.avatar_url || `https://github.com/${verifiedLogin}.png`;
+    const profileUrl = ghData?.html_url || `https://github.com/${verifiedLogin}`;
+    const bioText = ghData?.bio || `대진전통고 실시간 GitHub 연동 사용자 @${verifiedLogin} 입니다.`;
 
     if (!profiles[userId]) {
       profiles[userId] = {
         id: userId,
         email: email,
         auth_provider: "github",
-        role: "student", // 차단되지 않은 모든 GitHub 계정에 기본 학생 권한 부여
-        real_name: rawUsername,
+        role: "student", // 현실의 모든 GitHub 계정에 정식 학생 권한 부여
+        real_name: realName,
         grade: 1,
-        class_number: 1,
+        class_number: 4,
         student_number: Math.floor(Math.random() * 25 + 1),
-        department: "스마트소프트웨어과",
-        community_nickname: rawUsername,
+        department: "AI소프트웨어과",
+        community_nickname: verifiedLogin,
         theme_preference: "dark",
-        default_schedule: { grade: 1, class: 1 },
-        allergy_filters: [1, 2],
-        github_username: rawUsername,
-        github_avatar_url: `https://api.dicebear.com/7.x/identicon/svg?seed=${rawUsername}`,
-        github_profile_url: `https://github.com/${rawUsername}`,
-        bio: `대진전통고 GitHub 연동 사용자 @${rawUsername} 입니다.`,
+        default_schedule: { grade: 1, class: 4 },
+        allergy_filters: [],
+        github_username: verifiedLogin,
+        github_avatar_url: avatarUrl,
+        github_profile_url: profileUrl,
+        bio: bioText,
         privacy_agreed: true,
         privacy_agreed_at: new Date().toISOString()
       };
-      localStorage.setItem(STORAGE_PREFIX + "profiles", JSON.stringify(profiles));
+    } else {
+      // 이미 프로필이 있다면 최신 GitHub 정보 갱신
+      profiles[userId].github_username = verifiedLogin;
+      profiles[userId].github_avatar_url = avatarUrl;
+      profiles[userId].github_profile_url = profileUrl;
+      if (ghData?.bio) profiles[userId].bio = bioText;
+      if (ghData?.name) profiles[userId].real_name = ghData.name;
     }
+    localStorage.setItem(STORAGE_PREFIX + "profiles", JSON.stringify(profiles));
 
     const sessionUser = {
       id: userId,

@@ -344,3 +344,151 @@ export async function fetchNeisMeals(
     return [];
   }
 }
+
+/**
+ * 주말(토/일)인 경우 다음 주 월요일 날짜로 보정, 평일은 당일 날짜 반환 (YYYY-MM-DD)
+ */
+export function getWeekdayOrNextMonday(d: Date = new Date()): string {
+  const day = d.getDay(); // 0: 일요일, 6: 토요일
+  const target = new Date(d);
+  if (day === 6) {
+    // 토요일 -> +2일 (다음 주 월요일)
+    target.setDate(d.getDate() + 2);
+  } else if (day === 0) {
+    // 일요일 -> +1일 (다음 주 월요일)
+    target.setDate(d.getDate() + 1);
+  }
+  const year = target.getFullYear();
+  const month = String(target.getMonth() + 1).padStart(2, '0');
+  const date = String(target.getDate()).padStart(2, '0');
+  return `${year}-${month}-${date}`;
+}
+
+export interface NeisAcademicEvent {
+  id: string;
+  date: string; // YYYY-MM-DD
+  rawYmd: string; // YYYYMMDD
+  dayOfWeek: string; // 월, 화, 수 ...
+  eventNm: string;
+  content: string;
+  dDayText: string;
+  dDayNum: number;
+  category: 'exam' | 'festival' | 'activity' | 'vacation' | 'school' | 'holiday';
+  targetGrades: string;
+  grades: number[];
+  isHoliday: boolean;
+}
+
+/**
+ * 4. 학사일정 API (SchoolSchedule) 조회 및 정밀 D-Day 계산
+ * - ATPT_OFCDC_SC_CODE: C10 (부산광역시교육청)
+ * - SD_SCHUL_CODE: 7150597 (대진전자통신고등학교)
+ */
+export async function fetchNeisSchoolSchedule(
+  fromYmd?: string,
+  toYmd?: string,
+  ay?: string,
+  baseDateStr?: string
+): Promise<NeisAcademicEvent[]> {
+  try {
+    const keyParam = NEIS_CONFIG.KEY ? `&KEY=${NEIS_CONFIG.KEY}` : '';
+    
+    // 학년도 기본값 (2026) 또는 인자 반영
+    const targetAy = ay || '2026';
+    const defaultFrom = `${targetAy}0301`;
+    const nextYear = String(parseInt(targetAy, 10) + 1);
+    const defaultTo = `${nextYear}0228`;
+
+    const from = fromYmd ? fromYmd.replace(/-/g, '') : defaultFrom;
+    const to = toYmd ? toYmd.replace(/-/g, '') : defaultTo;
+
+    // pSize를 500으로 넉넉하게 설정하여 1년 전체 학사일정 완전 동기화
+    const url = `${NEIS_CONFIG.API_BASE}/SchoolSchedule?ATPT_OFCDC_SC_CODE=${NEIS_CONFIG.ATPT_OFCDC_SC_CODE}&SD_SCHUL_CODE=${NEIS_CONFIG.SD_SCHUL_CODE}&Type=json&pSize=500&AA_FROM_YMD=${from}&AA_TO_YMD=${to}${keyParam}`;
+    const res = await fetch(url, { next: { revalidate: 1800 } });
+    if (!res.ok) throw new Error(`NEIS SchoolSchedule HTTP Error: ${res.status}`);
+
+    const data = await res.json();
+    const rows = data?.SchoolSchedule?.[1]?.row || [];
+
+    // 토요휴업일 제외 및 주요 일정 필터링
+    const validRows = rows.filter((r: any) => {
+      const nm = r.EVENT_NM || '';
+      return nm !== '토요휴업일';
+    });
+
+    // 기준 날짜 계산 (baseDateStr 제공 시 사용, 없을 경우 2026-10-08 또는 오늘)
+    let baseDate: Date;
+    if (baseDateStr) {
+      const clean = baseDateStr.replace(/-/g, '');
+      const y = parseInt(clean.substring(0, 4), 10);
+      const m = parseInt(clean.substring(4, 6), 10) - 1;
+      const d = parseInt(clean.substring(6, 8), 10);
+      baseDate = new Date(y, m, d);
+    } else {
+      baseDate = new Date();
+    }
+    const todayZero = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate()).getTime();
+
+    const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+
+    return validRows.map((r: any, idx: number) => {
+      const ymd = r.AA_YMD || '';
+      const year = parseInt(ymd.substring(0, 4), 10);
+      const month = parseInt(ymd.substring(4, 6), 10) - 1;
+      const day = parseInt(ymd.substring(6, 8), 10);
+      const dateObj = new Date(year, month, day);
+      const eventTime = dateObj.getTime();
+      const dayOfWeek = dayNames[dateObj.getDay()] || '';
+
+      const diffDays = Math.round((eventTime - todayZero) / (1000 * 60 * 60 * 24));
+      let dDayText = '';
+      if (diffDays === 0) {
+        dDayText = 'D-Day';
+      } else if (diffDays > 0) {
+        dDayText = `D-${diffDays}`;
+      } else {
+        dDayText = `종료`;
+      }
+
+      const eventNm = r.EVENT_NM || '';
+      let category: NeisAcademicEvent['category'] = 'school';
+      if (/고사|평가|시험|수능|능력시험|모의고사/.test(eventNm)) {
+        category = 'exam';
+      } else if (/방학|개학|종업식|휴업일|재량휴업/.test(eventNm)) {
+        category = 'vacation';
+      } else if (/축제|페스티벌|체육대회|발표회|학술/.test(eventNm)) {
+        category = 'festival';
+      } else if (/수련|체험|탐방|수학여행|극기|입학식|설명회|총회|담임주간/.test(eventNm)) {
+        category = 'activity';
+      } else if (r.SBTR_DD_SC_NM === '공휴일' || /3·1절|광복절|개천절|한글날|어린이날|현충일|추석|설날|신정|성탄절|대체공휴일/.test(eventNm)) {
+        category = 'holiday';
+      }
+
+      const gradesList: number[] = [];
+      const gradeNames: string[] = [];
+      if (r.ONE_GRADE_EVENT_YN === 'Y') { gradesList.push(1); gradeNames.push('1학년'); }
+      if (r.TW_GRADE_EVENT_YN === 'Y') { gradesList.push(2); gradeNames.push('2학년'); }
+      if (r.THREE_GRADE_EVENT_YN === 'Y') { gradesList.push(3); gradeNames.push('3학년'); }
+      
+      const targetGrades = gradeNames.length === 3 ? '전 학년' : gradeNames.length > 0 ? gradeNames.join(', ') : '전체';
+
+      return {
+        id: `event-${ymd}-${idx}`,
+        date: `${ymd.substring(0, 4)}-${ymd.substring(4, 6)}-${ymd.substring(6, 8)}`,
+        rawYmd: ymd,
+        dayOfWeek,
+        eventNm,
+        content: r.EVENT_CNTNT || (r.SBTR_DD_SC_NM && r.SBTR_DD_SC_NM !== '해당없음' ? r.SBTR_DD_SC_NM : ''),
+        dDayText,
+        dDayNum: diffDays,
+        category,
+        targetGrades,
+        grades: gradesList,
+        isHoliday: r.SBTR_DD_SC_NM === '공휴일'
+      };
+    }).sort((a: any, b: any) => a.rawYmd.localeCompare(b.rawYmd));
+  } catch (err) {
+    console.warn('[NEIS] SchoolSchedule fetch failed:', err);
+    return [];
+  }
+}
